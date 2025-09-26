@@ -1,4 +1,4 @@
-#include <iostream>
+﻿#include <iostream>
 #include <string>
 #include <set>
 #include <vector>
@@ -12,17 +12,18 @@
 #include <lexbor/dom/interfaces/node.h>
 #include <lexbor/dom/interfaces/character_data.h>
 
+using namespace std;          // ✅ Added here
 using json = nlohmann::json;
 
 // ------------------ CURL WRITE CALLBACK ------------------
 static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
-    ((std::string*)userp)->append((char*)contents, size * nmemb);
+    ((string*)userp)->append((char*)contents, size * nmemb);
     return size * nmemb;
 }
 
 // ------------------ URL ENCODE ------------------
-std::string urlEncode(const std::string& str) {
-    std::string encoded;
+string urlEncode(const string& str) {
+    string encoded;
     char hex[4];
     for (unsigned char c : str) {
         if (isalnum(c)) {
@@ -44,9 +45,9 @@ std::string urlEncode(const std::string& str) {
 }
 
 // ------------------ FETCH PAGE ------------------
-std::string fetchPage(const std::string& url) {
+string fetchPage(const string& url) {
     CURL* curl = curl_easy_init();
-    std::string buffer;
+    string buffer;
 
     if (curl) {
         curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
@@ -59,8 +60,8 @@ std::string fetchPage(const std::string& url) {
 
         CURLcode res = curl_easy_perform(curl);
         if (res != CURLE_OK) {
-            std::cerr << "cURL error while fetching " << url << ": "
-                << curl_easy_strerror(res) << std::endl;
+            cerr << "cURL error while fetching " << url << ": "
+                << curl_easy_strerror(res) << endl;
         }
         curl_easy_cleanup(curl);
     }
@@ -68,7 +69,7 @@ std::string fetchPage(const std::string& url) {
 }
 
 // ------------------ RECURSIVE TEXT EXTRACTION ------------------
-void extractTextRecursive(lxb_dom_node_t* node, std::string& out, std::set<lxb_dom_node_t*>& visited) {
+void extractTextRecursive(lxb_dom_node_t* node, string& out, set<lxb_dom_node_t*>& visited) {
     for (; node != nullptr; node = node->next) {
         if (visited.find(node) != visited.end()) continue; // skip already processed
         visited.insert(node);
@@ -80,7 +81,7 @@ void extractTextRecursive(lxb_dom_node_t* node, std::string& out, std::set<lxb_d
             const lxb_char_t* tag_name = lxb_dom_element_local_name(el, &name_len);
 
             if (tag_name) {
-                std::string tag((const char*)tag_name, name_len);
+                string tag((const char*)tag_name, name_len);
                 for (auto& c : tag) c = tolower(c);
 
                 if (tag == "script" || tag == "style" || tag == "noscript" ||
@@ -104,13 +105,13 @@ void extractTextRecursive(lxb_dom_node_t* node, std::string& out, std::set<lxb_d
             size_t len = 0;
             const lxb_char_t* data = lxb_dom_node_text_content(node, &len);
             if (data && len > 0) {
-                std::string text(reinterpret_cast<const char*>(data), len);
+                string text(reinterpret_cast<const char*>(data), len);
 
                 // Trim whitespace
                 auto start = text.find_first_not_of(" \t\r\n");
                 auto end = text.find_last_not_of(" \t\r\n");
-                if (start != std::string::npos && end != std::string::npos) {
-                    std::string trimmed = text.substr(start, end - start + 1);
+                if (start != string::npos && end != string::npos) {
+                    string trimmed = text.substr(start, end - start + 1);
 
                     // Keep only meaningful text
                     if (trimmed.length() > 3) {
@@ -129,7 +130,7 @@ void extractTextRecursive(lxb_dom_node_t* node, std::string& out, std::set<lxb_d
 }
 
 // ------------------ MAIN TEXT EXTRACTION FUNCTION ------------------
-std::string extractTextFromHTML(const std::string& html) {
+string extractTextFromHTML(const string& html) {
     lxb_status_t status;
     lxb_html_document_t* document = lxb_html_document_create();
     if (!document) return "Failed to create document";
@@ -150,8 +151,8 @@ std::string extractTextFromHTML(const std::string& html) {
 
     lxb_dom_element_t* body_el = lxb_dom_interface_element(body_html);
 
-    std::string extracted;
-    std::set<lxb_dom_node_t*> visited;
+    string extracted;
+    set<lxb_dom_node_t*> visited;
     extractTextRecursive(lxb_dom_interface_node(body_el), extracted, visited);
 
     lxb_html_document_destroy(document);
@@ -164,41 +165,41 @@ int main() {
     curl_global_init(CURL_GLOBAL_DEFAULT);
 
     // ---- USER INPUT SECTION ----
-    std::string name, university, department;
+    string name, university, department;
 
-    std::cout << "Enter name (leave blank if none): ";
-    std::getline(std::cin, name);
+    cout << "Enter name (leave blank if none): ";
+    getline(cin, name);
 
-    std::cout << "Enter university (leave blank if none): ";
-    std::getline(std::cin, university);
+    cout << "Enter university (leave blank if none): ";
+    getline(cin, university);
 
-    std::cout << "Enter department (leave blank if none): ";
-    std::getline(std::cin, department);
+    cout << "Enter department (leave blank if none): ";
+    getline(cin, department);
 
     // Build search query dynamically
-    std::string query;
+    string query;
     if (!name.empty()) query += name + " ";
     if (!university.empty()) query += university + " ";
     if (!department.empty()) query += department + " ";
 
     if (query.empty()) {
-        std::cout << "No input provided. Exiting." << std::endl;
+        cout << "No input provided. Exiting." << endl;
         return 0;
     }
 
     query = urlEncode(query);
 
     // ---- GOOGLE CUSTOM SEARCH API CONFIG ----
-    std::string apiKey = "AIzaSyCLUMLZaNTNeD3N1E2IJ2ODSPuLkdfj0Vo";   // replace with your API Key
-    std::string cx = "c499c8c7c5dde46d4";         // replace with your Search Engine ID
+    string apiKey = "AIzaSyCLUMLZaNTNeD3N1E2IJ2ODSPuLkdfj0Vo";   // replace with your API Key
+    string cx = "c499c8c7c5dde46d4";         // replace with your Search Engine ID
 
-    std::string url = "https://www.googleapis.com/customsearch/v1?q=" + query +
+    string url = "https://www.googleapis.com/customsearch/v1?q=" + query +
         "&key=" + apiKey +
         "&cx=" + cx;
 
     // ---- CURL REQUEST ----
     CURL* curl = curl_easy_init();
-    std::string readBuffer;
+    string readBuffer;
 
     if (curl) {
         curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
@@ -208,47 +209,47 @@ int main() {
         CURLcode res = curl_easy_perform(curl);
 
         if (res != CURLE_OK) {
-            std::cerr << "curl_easy_perform() failed: "
-                << curl_easy_strerror(res) << std::endl;
+            cerr << "curl_easy_perform() failed: "
+                << curl_easy_strerror(res) << endl;
         }
         else {
             try {
                 json j = json::parse(readBuffer);
 
                 if (j.contains("error")) {
-                    std::cerr << "API Error: " << j["error"]["message"] << "\n";
+                    cerr << "API Error: " << j["error"]["message"] << "\n";
                     return 1;
                 }
 
                 if (j.contains("items")) {
-                    std::cout << "\nSearch Results for: " << query << "\n";
-                    std::cout << "------------------------------------\n";
+                    cout << "\nSearch Results for: " << query << "\n";
+                    cout << "------------------------------------\n";
 
                     int count = 1;
                     for (auto& item : j["items"]) {
-                        std::string link = item.value("link", "");
-                        std::cout << count++ << ". " << item.value("title", "No Title") << "\n";
-                        std::cout << "   Link: " << link << "\n";
-                        std::cout << "   Snippet: " << item.value("snippet", "No Snippet") << "\n";
+                        string link = item.value("link", "");
+                        cout << count++ << ". " << item.value("title", "No Title") << "\n";
+                        cout << "   Link: " << link << "\n";
+                        cout << "   Snippet: " << item.value("snippet", "No Snippet") << "\n";
 
                         if (!link.empty()) {
-                            std::string pageHTML = fetchPage(link);
+                            string pageHTML = fetchPage(link);
                             if (!pageHTML.empty()) {
-                                std::string content = extractTextFromHTML(pageHTML);
-                                std::cout << "   Extracted Content (first 500 chars):\n"
+                                string content = extractTextFromHTML(pageHTML);
+                                cout << "   Extracted Content (first 500 chars):\n"
                                     << content.substr(0, 500) << "...\n";
                             }
                         }
 
-                        std::cout << "------------------------------------\n";
+                        cout << "------------------------------------\n";
                     }
                 }
                 else {
-                    std::cout << "No results found.\n";
+                    cout << "No results found.\n";
                 }
             }
-            catch (std::exception& e) {
-                std::cerr << "JSON parsing error: " << e.what() << std::endl;
+            catch (exception& e) {
+                cerr << "JSON parsing error: " << e.what() << endl;
             }
         }
 
