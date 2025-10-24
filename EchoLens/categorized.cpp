@@ -26,6 +26,8 @@
 #include <chrono>
 #include <cctype>
 #include <cstdio>
+#include <unordered_set>
+#include <regex>
 
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>
@@ -565,6 +567,30 @@ static void printSummary(const vector<ExtractedFact>& knowledgeBase) {
     }
     cout << "\n=======================================\n";
 }
+string mergeAndCleanInfo(const vector<ExtractedFact>& facts) {
+    string combinedText;
+    unordered_set<string> uniqueSentences;
+
+    // Combine all fact values into text
+    for (const auto& fact : facts) {
+        string text = fact.value;
+        stringstream ss(text);
+        string sentence;
+        while (getline(ss, sentence, '.')) {
+            sentence = regex_replace(sentence, regex("^ +| +$|( ) +"), "$1");
+            if (!sentence.empty() && uniqueSentences.find(sentence) == uniqueSentences.end()) {
+                uniqueSentences.insert(sentence);
+                combinedText += sentence + ". ";
+            }
+        }
+    }
+
+    combinedText = regex_replace(combinedText, regex("\\s+"), " ");
+    return combinedText;
+}
+
+
+
 
 // ------------------ MAIN ------------------
 int main() {
@@ -743,7 +769,20 @@ int main() {
         }
 
         // After processing pages, print final summary grouped by category
-        printSummary(knowledgeBase);
+       // printSummary(knowledgeBase);
+
+        // CHANGES MADE HERE 
+        cout << "\n==============================\n";
+        cout << "Merged & Cleaned Information:\n";
+        cout << "==============================\n";
+
+        string mergedInfo = mergeAndCleanInfo(knowledgeBase);
+        if (mergedInfo.empty()) {
+            cout << "No collective summary available.\n";
+        }
+        else {
+            cout << mergedInfo << "\n";
+        }
 
     }
     catch (const std::exception& e) {
