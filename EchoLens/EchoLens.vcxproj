@@ -89,6 +89,7 @@
     <Link>
       <AdditionalDependencies>libcurl.lib;ws2_32.lib;wldap32.lib;Crypt32.lib;lexbor.lib;Normaliz.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>C:\vcpkg\installed\x64-windows\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <SubSystem>Console</SubSystem>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
@@ -121,10 +122,18 @@ wldap32.lib;
 Crypt32.lib;
 Normaliz.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>C:\vcpkg\installed\x64-windows\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <SubSystem>Console</SubSystem>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="attempt.cpp" />
+    <ClCompile Include="categorized.cpp" />
+    <ClCompile Include="hitormiss.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="new.cpp" />
+    <ClCompile Include="patched.cpp" />
+    <ClCompile Include="trial.cpp" />
+    <ClCompile Include="try.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
