@@ -132,8 +132,8 @@ Normaliz.lib;%(AdditionalDependencies)</AdditionalDependencies>
     <ClCompile Include="main.cpp" />
     <ClCompile Include="new.cpp" />
     <ClCompile Include="patched.cpp" />
+    <ClCompile Include="summary.cpp" />
     <ClCompile Include="trial.cpp" />
-    <ClCompile Include="try.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -18,9 +18,6 @@
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="try.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="attempt.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -37,6 +34,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="new.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="summary.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
