@@ -1,4 +1,8 @@
-﻿//#include <iostream>
+﻿//// enhanced_fact_engine_v2.cpp
+//// Enhanced with multi-priority filtering: Name (high), University/Department (medium)
+//// Ready to compile with C++17, Lexbor, libcurl, and nlohmann/json
+//
+//#include <iostream>
 //#include <string>
 //#include <set>
 //#include <vector>
@@ -10,7 +14,6 @@
 //#include <chrono>
 //#include <cctype>
 //#include <cstdio>
-//#include <windows.h>
 //#include <curl/curl.h>
 //#include <nlohmann/json.hpp>
 //
@@ -24,24 +27,25 @@
 //using namespace std;
 //using json = nlohmann::json;
 //
-//// ---------------------- Quick tunables ----------------------
+//// ---------------------- Configuration ----------------------
 //static int maxProcess = 3; // DEBUG default; change to 10+ for production
 //static vector<string> keywordFilters = { "email", "contact", "phone", "@" };
-//// -------------------- Configuration --------------------
-//static const long CURL_CONNECT_TIMEOUT = 10L;      // seconds to establish connection
-//static const long CURL_TOTAL_TIMEOUT = 25L;       // overall seconds for each cURL transfer
-//static const size_t MAX_DOWNLOAD_BYTES = 8 * 1024 * 1024; // 8 MB maximum to download per page
-//static const size_t MAX_CONTENT_CHARS = 20000;    // truncate extracted content to this many chars
-//static const size_t MAX_SCAN_TOKENS = 2000;       // safety limit on tokens scanned
-//static const chrono::seconds LEXBOR_TIMEOUT(20);  // wait up to 20 seconds for Lexbor parsing
+//
+//static const long CURL_CONNECT_TIMEOUT = 10L;
+//static const long CURL_TOTAL_TIMEOUT = 25L;
+//static const size_t MAX_DOWNLOAD_BYTES = 8 * 1024 * 1024;
+//static const size_t MAX_CONTENT_CHARS = 20000;
+//static const size_t MAX_SCAN_TOKENS = 2000;
+//static const chrono::seconds LEXBOR_TIMEOUT(20);
 //// ------------------ end Configuration ------------------
 //
 //// ---------- Data structures for facts ----------
 //struct ExtractedFact {
-//    string category;   // e.g. "Designation", "Education", "Research Interest"
-//    string value;      // the actual snippet / fact text
-//    string sourceURL;  // which page it came from
+//    string category;
+//    string value;
+//    string sourceURL;
 //    int confidence = 1; // 1=low, 2=medium, 3=high
+//    int relevance_score = 0; // Combined relevance score
 //};
 //
 //struct WriteData {
@@ -49,8 +53,8 @@
 //    size_t maxBytes;
 //};
 //
-//// ---------- Global aggregator for fusion (optional) ----------
-//static vector<ExtractedFact> globalFactsCollector; // collects facts across pages for the fusion stage
+//// ---------- Global aggregator ----------
+//static vector<ExtractedFact> globalFactsCollector;
 //
 //// ------------------ cURL write callback ------------------
 //static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
@@ -59,7 +63,7 @@
 //    WriteData* wd = static_cast<WriteData*>(userp);
 //    if (!wd->buffer) return 0;
 //    if (wd->buffer->size() + realsize > wd->maxBytes) {
-//        return 0; // signal write error -> cURL abort
+//        return 0;
 //    }
 //    wd->buffer->append(static_cast<char*>(contents), realsize);
 //    return realsize;
@@ -102,7 +106,6 @@
 //    return r;
 //}
 //
-//// Utility: case-insensitive keyword lookup in a block of text
 //static bool containsAnyKeywordCaseInsensitive(const string& text, const vector<string>& keywords) {
 //    if (text.empty() || keywords.empty()) return false;
 //    string lowerText = toLowerStr(text);
@@ -115,7 +118,6 @@
 //    return false;
 //}
 //
-//// Fallback HTML stripper (VERY FAST) used only if Lexbor fails
 //static string stripTags(const string& html) {
 //    string out;
 //    out.reserve(html.size());
@@ -128,7 +130,6 @@
 //            inTag = false;
 //        }
 //        else if (!inTag) {
-//            // Normalize newlines and tabs to spaces for clean tokenizing
 //            if (c == '\n' || c == '\r' || c == '\t') {
 //                out.push_back(' ');
 //            }
@@ -140,7 +141,7 @@
 //    return out;
 //}
 //
-//// ------------------ Enhanced Name Matching Strategy ------------------
+//// ------------------ Enhanced Multi-Priority Filtering Strategy ------------------
 //static vector<string> splitNameParts(const string& name) {
 //    vector<string> parts;
 //    istringstream iss(name);
@@ -152,137 +153,159 @@
 //    return parts;
 //}
 //
-//static bool containsExactNameMatch(const string& text, const string& name) {
-//    if (name.empty()) return true;
+//static bool containsExactMatch(const string& text, const string& term) {
+//    if (term.empty()) return false;
 //    string lowerText = toLowerStr(text);
-//    string lowerName = toLowerStr(name);
-//    return lowerText.find(lowerName) != string::npos;
+//    string lowerTerm = toLowerStr(term);
+//    return lowerText.find(lowerTerm) != string::npos;
 //}
 //
-//static bool containsMultipleNameParts(const string& text, const string& name) {
-//    if (name.empty()) return true;
+//static bool containsMultipleParts(const string& text, const string& term) {
+//    if (term.empty()) return false;
 //
 //    string lowerText = toLowerStr(text);
-//    auto nameParts = splitNameParts(name);
+//    auto termParts = splitNameParts(term);
 //
-//    if (nameParts.size() >= 2) {
+//    if (termParts.size() >= 2) {
 //        int matches = 0;
-//        for (const auto& part : nameParts) {
+//        for (const auto& part : termParts) {
 //            if (lowerText.find(part) != string::npos) {
 //                matches++;
 //            }
 //        }
-//        return (nameParts.size() == 2 && matches == 2) || (nameParts.size() >= 3 && matches >= 2);
+//        return (termParts.size() == 2 && matches == 2) || (termParts.size() >= 3 && matches >= 2);
 //    }
 //
 //    return false;
 //}
 //
-//// ------------------ Balanced Relevance Scoring - Name Priority ------------------
-//static int calculateRelevanceScore(const string& text, const string& targetName, const string& university = "", const string& department = "") {
-//    if (targetName.empty()) return 0; // No name provided
-//
-//    string lowerText = toLowerStr(text);
-//    string lowerName = toLowerStr(targetName);
+//// Calculate relevance score: Name (highest), University/Department (medium)
+//static int calculateRelevanceScore(const string& text, const string& name, const string& university, const string& department) {
 //    int score = 0;
 //
-//    // NAME IS PRIMARY - Highest priority
-//    // Exact name match - strongest signal
-//    if (lowerText.find(lowerName) != string::npos) {
-//        score += 15; // Very high score for exact name match
-//    }
+//    // NAME: Highest priority (40 points max)
+//    if (!name.empty()) {
+//        if (containsExactMatch(text, name)) {
+//            score += 30; // Exact name match
+//        }
+//        if (containsMultipleParts(text, name)) {
+//            score += 20; // Multiple name parts
+//        }
 //
-//    // Name parts matching
-//    auto nameParts = splitNameParts(targetName);
-//    int partMatches = 0;
-//    for (const auto& part : nameParts) {
-//        if (lowerText.find(part) != string::npos) {
-//            partMatches++;
-//            score += 1; // Good score for name parts
+//        // Additional bonus for name with title context
+//        string lowerText = toLowerStr(text);
+//        if (lowerText.find("professor") != string::npos && containsExactMatch(text, name)) {
+//            score += 10;
+//        }
+//        if (lowerText.find("dr.") != string::npos && containsExactMatch(text, name)) {
+//            score += 10;
 //        }
 //    }
 //
-//    // Bonus for multiple name parts (strong name presence)
-//    if (partMatches >= 2) {
-//        score += 8;
-//    }
-//
-//    // UNIVERSITY/DEPARTMENT - Supporting context only (lower priority)
+//    // UNIVERSITY: Medium priority (20 points max)
 //    if (!university.empty()) {
-//        string lowerUni = toLowerStr(university);
-//        if (lowerText.find(lowerUni) != string::npos) {
-//            // Only give university points if name is also present
-//            if (partMatches > 0) {
-//                score += 3; // Small bonus for university confirmation
-//            }
-//            // If no name found, university gets minimal points
-//            else {
-//                score += 1;
-//            }
+//        if (containsExactMatch(text, university)) {
+//            score += 15;
+//        }
+//        if (containsMultipleParts(text, university)) {
+//            score += 10;
+//        }
+//
+//        // Bonus for university in context with name
+//        if (!name.empty() && containsExactMatch(text, name) && containsExactMatch(text, university)) {
+//            score += 5;
 //        }
 //    }
 //
+//    // DEPARTMENT: Medium priority (20 points max)
 //    if (!department.empty()) {
-//        string lowerDept = toLowerStr(department);
-//        if (lowerText.find(lowerDept) != string::npos) {
-//            // Only give department points if name is also present
-//            if (partMatches > 0) {
-//                score += 2; // Small bonus for department confirmation
-//            }
-//            // If no name found, department gets minimal points
-//            else {
-//                score += 1;
-//            }
+//        if (containsExactMatch(text, department)) {
+//            score += 15;
+//        }
+//        if (containsMultipleParts(text, department)) {
+//            score += 10;
+//        }
+//
+//        // Bonus for department in context with name
+//        if (!name.empty() && containsExactMatch(text, name) && containsExactMatch(text, department)) {
+//            score += 5;
 //        }
 //    }
 //
-//    // Title indicators (moderate bonus)
-//    vector<string> titleIndicators = { "professor", "dr.", "doctor", "faculty", "staff" };
-//    for (const auto& indicator : titleIndicators) {
-//        if (lowerText.find(indicator) != string::npos) {
+//    // Contextual bonus for academic/professional terms
+//    string lowerText = toLowerStr(text);
+//    vector<string> academicTerms = { "faculty", "research", "publication", "conference", "journal" };
+//    for (const auto& term : academicTerms) {
+//        if (lowerText.find(term) != string::npos) {
 //            score += 2;
 //        }
 //    }
 //
-//    return score;
+//    return min(score, 100); // Cap at 100
 //}
 //
-//static bool isRelevantToTarget(const string& text, const string& targetName, const string& university = "", const string& department = "") {
-//    if (targetName.empty()) return true;
+//static bool isRelevantToTarget(const string& text, const string& name, const string& university, const string& department, int& out_score) {
+//    // If no filters provided, accept everything with low score
+//    if (name.empty() && university.empty() && department.empty()) {
+//        out_score = 10;
+//        return true;
+//    }
 //
-//    int score = calculateRelevanceScore(text, targetName, university, department);
+//    out_score = calculateRelevanceScore(text, name, university, department);
 //
-//    // STRICT THRESHOLDS THAT PRIORITIZE NAME PRESENCE
+//    // Acceptance thresholds:
+//    // - High: Name match (score >= 20)
+//    // - Medium: University/Department match (score >= 15) 
+//    // - Low: Any academic context (score >= 10)
+//    return out_score >= 10;
+//}
 //
-//    // High confidence: Strong name presence (exact match or multiple parts)
-//    if (score >= 12) return true;
+//static bool isNearby(const string& haystack, size_t pos, const string& needle, size_t window = 300) {
+//    if (needle.empty()) return true;
+//    if (haystack.empty()) return false;
+//    string lower = toLowerStr(haystack);
+//    string lowNeedle = toLowerStr(needle);
 //
-//    // Medium confidence: Good name presence with supporting context
-//    if (score >= 8) return true;
+//    size_t found = lower.find(lowNeedle);
+//    while (found != string::npos) {
+//        size_t startWindow = (pos > window) ? pos - window : 0;
+//        size_t endWindow = min(pos + window, lower.size() - 1);
+//        if (found >= startWindow && found <= endWindow) return true;
+//        found = lower.find(lowNeedle, found + 1);
+//    }
 //
-//    // Low confidence: Some name presence but weak
-//    if (score >= 8) {
-//        // Only accept if we have at least one name part
-//        string lowerText = toLowerStr(text);
-//        auto nameParts = splitNameParts(targetName);
-//        for (const auto& part : nameParts) {
-//            if (lowerText.find(part) != string::npos) {
-//                return true;
-//            }
+//    auto parts = splitNameParts(needle);
+//    for (auto& p : parts) {
+//        size_t fp = lower.find(p);
+//        while (fp != string::npos) {
+//            size_t startWindow = (pos > window) ? pos - window : 0;
+//            size_t endWindow = min(pos + window, lower.size() - 1);
+//            if (fp >= startWindow && fp <= endWindow) return true;
+//            fp = lower.find(p, fp + 1);
 //        }
 //    }
+//    return false;
+//}
+//
+//// Enhanced proximity check considering all search terms
+//static bool isNearbyAnyTerm(const string& haystack, size_t pos, const string& name, const string& university, const string& department, size_t window = 300) {
+//    if (name.empty() && university.empty() && department.empty()) return true;
+//
+//    if (!name.empty() && isNearby(haystack, pos, name, window)) return true;
+//    if (!university.empty() && isNearby(haystack, pos, university, window)) return true;
+//    if (!department.empty() && isNearby(haystack, pos, department, window)) return true;
 //
 //    return false;
 //}
 //
-//// ------------------ Enhanced Context Window with Name Prioritization ------------------
-//static string extractTargetContext(const string& content, const string& name, const string& university = "", const string& department = "") {
-//    if (content.empty() || name.empty()) return content;
+//// ------------------ Enhanced Context Window ------------------
+//static string extractTargetContext(const string& content, const string& name, const string& university, const string& department) {
+//    if (content.empty() || (name.empty() && university.empty() && department.empty()))
+//        return content;
 //
 //    vector<string> paragraphs;
 //    string currentPara;
 //
-//    // Split by paragraphs
 //    for (char c : content) {
 //        currentPara.push_back(c);
 //        if (c == '\n' || currentPara.size() > 500) {
@@ -294,40 +317,14 @@
 //    }
 //    if (!currentPara.empty()) paragraphs.push_back(currentPara);
 //
-//    // Find paragraphs that contain the NAME (primary requirement)
 //    string focusedContent;
-//    vector<pair<int, string>> scoredParagraphs;
-//
 //    for (const auto& para : paragraphs) {
-//        // FIRST check if paragraph contains any name parts
-//        bool hasName = false;
-//        string lowerPara = toLowerStr(para);
-//        auto nameParts = splitNameParts(name);
-//
-//        for (const auto& part : nameParts) {
-//            if (lowerPara.find(part) != string::npos) {
-//                hasName = true;
-//                break;
-//            }
-//        }
-//
-//        // Only score paragraphs that contain the name
-//        if (hasName) {
-//            int score = calculateRelevanceScore(para, name, university, department);
-//            scoredParagraphs.push_back({ score, para });
+//        int score = 0;
+//        if (isRelevantToTarget(para, name, university, department, score) && score >= 15) {
+//            focusedContent += para + " ";
 //        }
 //    }
 //
-//    // Sort by relevance score (highest first)
-//    sort(scoredParagraphs.begin(), scoredParagraphs.end(),
-//        [](const auto& a, const auto& b) { return a.first > b.first; });
-//
-//    // Take top paragraphs (prioritizing those with strongest name presence)
-//    for (size_t i = 0; i < min(scoredParagraphs.size(), size_t(5)); ++i) {
-//        focusedContent += scoredParagraphs[i].second + " ";
-//    }
-//
-//    // If no name-containing paragraphs found, return original content
 //    return focusedContent.empty() ? content : focusedContent;
 //}
 //
@@ -363,40 +360,7 @@
 //    return text;
 //}
 //
-//// ------------------ Name helpers & proximity checks ------------------
-//static bool containsNameInLine(const string& line, const string& name) {
-//    return isRelevantToTarget(line, name);
-//}
-//
-//// Check if `needle` occurs within +/- window characters of any occurrence of name in `haystack`.
-//static bool isNearby(const string& haystack, size_t pos, const string& needle, size_t window = 300) {
-//    if (needle.empty()) return true; // no restriction
-//    if (haystack.empty()) return false;
-//    string lower = toLowerStr(haystack);
-//    string lowNeedle = toLowerStr(needle);
-//
-//    size_t found = lower.find(lowNeedle);
-//    while (found != string::npos) {
-//        size_t startWindow = (pos > window) ? pos - window : 0;
-//        size_t endWindow = min(pos + window, lower.size() - 1);
-//        if (found >= startWindow && found <= endWindow) return true;
-//        found = lower.find(lowNeedle, found + 1);
-//    }
-//
-//    auto parts = splitNameParts(needle);
-//    for (auto& p : parts) {
-//        size_t fp = lower.find(p);
-//        while (fp != string::npos) {
-//            size_t startWindow = (pos > window) ? pos - window : 0;
-//            size_t endWindow = min(pos + window, lower.size() - 1);
-//            if (fp >= startWindow && fp <= endWindow) return true;
-//            fp = lower.find(p, fp + 1);
-//        }
-//    }
-//    return false;
-//}
-//
-//// ------------------ Fast raw HTML scan for mailto: / tel: (with positions) ------------------
+//// ------------------ Fast raw HTML scan for mailto: / tel: ------------------
 //static vector<tuple<string, string, size_t>> scanHTMLForMailtoTelWithPos(const string& html) {
 //    vector<tuple<string, string, size_t>> results;
 //    string lower = toLowerStr(html);
@@ -427,7 +391,7 @@
 //    return results;
 //}
 //
-//// ------------------ Lexbor-based extraction (walk DOM and collect visible text) ------------------
+//// ------------------ Lexbor-based extraction ------------------
 //static string extractTextFromHTML_lexbor(const string& html) {
 //    lxb_status_t status;
 //    lxb_html_document_t* document = lxb_html_document_create();
@@ -530,7 +494,7 @@
 //    }
 //}
 //
-//// ------------------ Contact detection helpers (strict phones) ------------------
+//// ------------------ Contact detection helpers ------------------
 //static bool looksLikeEmail(const string& token) {
 //    auto atPos = token.find('@');
 //    if (atPos == string::npos) return false;
@@ -548,7 +512,7 @@
 //
 //static bool looksLikeStrictPhone(const string& token) {
 //    if (token.empty()) return false;
-//    if (token.size() > 40) return false; // reject absurd tokens
+//    if (token.size() > 40) return false;
 //    size_t idx = 0;
 //    if (token[0] == '+') {
 //        idx = 1;
@@ -566,8 +530,8 @@
 //    return (digits >= 7 && digits <= 15);
 //}
 //
-//// ------------------ Token-based hybrid detector (strict) ------------------
-//static vector<string> extractContactsTokenBased(const string& content, const string& name, const string& university = "", const string& department = "") {
+//// ------------------ Token-based hybrid detector ------------------
+//static vector<string> extractContactsTokenBased(const string& content, const string& name) {
 //    vector<string> results;
 //    if (content.empty()) return results;
 //
@@ -594,7 +558,6 @@
 //        string tok = tokens[i];
 //        string low = lowerTokens[i];
 //
-//        // Email detection
 //        if (low.rfind("mailto:", 0) == 0) {
 //            string email = tok.substr(7);
 //            email = trimPunctEdges(email);
@@ -621,124 +584,41 @@
 //        }
 //    }
 //
-//    // ENHANCED FILTERING: Use relevance scoring to filter contacts
-//    vector<string> filteredResults;
-//    for (auto& contact : foundSet) {
-//        string type = contact.substr(0, contact.find(":"));
-//        string value = contact.substr(contact.find(": ") + 2);
-//
-//        bool isRelevant = true;
-//
-//        // If we have a name, check if this contact is relevant to the target person
-//        if (!name.empty()) {
-//            // Find the contact in the content
-//            string lowerContent = toLowerStr(content);
-//            string lowerValue = toLowerStr(value);
-//            size_t pos = lowerContent.find(lowerValue);
-//
-//            if (pos != string::npos) {
-//                // Extract context around the contact
-//                size_t contextStart = (pos > 300) ? pos - 300 : 0;
-//                size_t contextEnd = min(pos + 300, content.size());
-//                string contactContext = content.substr(contextStart, contextEnd - contextStart);
-//
-//                // Calculate relevance score considering name + university + department
-//                int relevanceScore = calculateRelevanceScore(contactContext, name, university, department);
-//
-//                // Flexible acceptance criteria
-//                if (!university.empty() || !department.empty()) {
-//                    // When university/department is provided, be more flexible
-//                    isRelevant = (relevanceScore >= 5);
-//                }
-//                else {
-//                    // Name-only searches require stronger name presence
-//                    isRelevant = (relevanceScore >= 6);
-//                }
-//
-//                // DEBUG: Uncomment to see contact filtering in action
-//                // cout << "   [CONTACT FILTER] " << type << ": " << value << " - Score: " << relevanceScore << " - " << (isRelevant ? "ACCEPTED" : "REJECTED") << "\n";
-//            }
-//            else {
-//                // Contact value not found in content (shouldn't happen, but safety check)
-//                isRelevant = false;
-//            }
-//        }
-//
-//        if (isRelevant) {
-//            filteredResults.push_back(contact);
-//        }
-//    }
-//
-//    return filteredResults;
+//    for (auto& s : foundSet) results.push_back(s);
+//    return results;
 //}
 //
 //// ------------------ FACT SCORING ENGINE ------------------
-//
-//// category -> list of trigger keywords (lowercase)
 //static const map<string, vector<string>> keywordCategoryMap = {
-//    {"Designation", {"professor", "lecturer", "assistant professor", "associate professor",
-//                    "assistant", "associate", "hod", "head of", "dean", "chair",
-//                    "faculty", "postdoc", "researcher", "instructor", "adjunct"}},
-//
-//    {"Department", {"department of", "dept. of", "school of", "college of",
-//                   "computer science", "electrical engineering", "mechanical engineering",
-//                   "mathematics", "physics", "chemistry", "biology", "informatics"}},
-//
-//    {"Education", {"ph.d", "phd", "doctorate", "m.s", "ms", "m.sc", "masters",
-//                  "b.s", "bs", "b.sc", "bachelor", "graduated", "alumni", "alumnus",
-//                  "university", "institute", "college"}},
-//
-//    {"Research Interest", {"research interests", "research areas", "specialization",
-//                          "focus areas", "current research", "publications",
-//                          "quantum", "cryptography", "iot", "machine learning",
-//                          "deep learning", "computer vision", "artificial intelligence"}},
-//
-//    {"Contact", {"email", "phone", "telephone", "contact", "office", "room",
-//                "address", "location", "hours"}},
-//
-//    {"Honors/Awards", {"award", "fellow", "honor", "distinction", "prize",
-//                      "awardee", "scholarship", "grant", "funding"}}
+//    {"Designation", {"professor", "lecturer", "assistant professor", "associate professor", "assistant", "associate", "hod", "head of", "dean", "chair", "faculty", "postdoc", "researcher", "instructor"}},
+//    {"Department", {"department", "dept.", "csit", "computer science", "computer & it", "computer science & it", "informatics", "electrical", "mechanical", "mathematics", "physics"}},
+//    {"Education", {"phd", "ph.d", "doctorate", "ms", "msc", "m.sc", "bs", "bsc", "b.s.", "b.s", "degree", "graduat", "master", "bachelor"}},
+//    {"Research Interest", {"research", "interest", "specializ", "specialise", "focus", "quantum", "cryptography", "iot", "machine learning", "deep learning", "computer vision"}},
+//    {"Timeline", {"joined", "appointed", "since", "from", "started", "began", "effective", "onward", "promoted", "served as"}},
+//    {"Family", {"son of", "s/o", "father", "mother", "parents", "parent", "wife", "husband"}},
+//    {"Profile Links", {"google scholar", "scholar.google", "researchgate", "linkedin", "orcid", "cv", "resume"}},
+//    {"Honors/Awards", {"award", "fellow", "honor", "distinction", "prize", "awardee"}}
 //};
 //
-//// Score a sentence/line against category keywords and return the best category and score.
-//static pair<string, int> scoreLineAgainstCategories(const string& line, const string& name) {
+//static pair<string, int> scoreLineAgainstCategories(const string& line) {
 //    string low = toLowerStr(line);
 //    int bestScore = 0;
 //    string bestCategory;
-//
-//    // Bonus for lines that contain the name
-//    int nameBonus = containsMultipleNameParts(line, name) ? 5 : 0;
-//
 //    for (const auto& p : keywordCategoryMap) {
 //        int score = 0;
 //        for (const auto& kw : p.second) {
-//            size_t pos = low.find(kw);
-//            if (pos != string::npos) {
-//                // Weight by keyword importance and position
-//                int keywordWeight = (int)kw.size() / 3 + 1;
-//
-//                // Bonus for exact phrase matches
-//                if (pos > 0 && !isalnum(low[pos - 1]) &&
-//                    pos + kw.size() < low.size() && !isalnum(low[pos + kw.size()])) {
-//                    keywordWeight *= 2;
-//                }
-//
-//                score += keywordWeight;
+//            if (low.find(kw) != string::npos) {
+//                score += (int)kw.size() / 4 + 1;
 //            }
 //        }
-//
-//        score += nameBonus;
-//
 //        if (score > bestScore) {
 //            bestScore = score;
 //            bestCategory = p.first;
 //        }
 //    }
-//
 //    return { bestCategory, bestScore };
 //}
 //
-//// split content into candidate lines (sentence-like) for scanning
 //static vector<string> splitIntoCandidateLines(const string& content) {
 //    vector<string> lines;
 //    if (content.empty()) return lines;
@@ -768,364 +648,72 @@
 //    return lines;
 //}
 //
-//// scan content for facts and append to knowledgeBase (name-aware)
-//static void scanForFacts(const string& content, const string& sourceURL,
-//    vector<ExtractedFact>& knowledgeBase,
-//    const string& name, const string& university = "", const string& department = "") {
+//static void scanForFacts(const string& content, const string& sourceURL, vector<ExtractedFact>& knowledgeBase,
+//    const string& name, const string& university, const string& department) {
 //    if (content.empty()) return;
 //    vector<string> lines = splitIntoCandidateLines(content);
 //
 //    for (const auto& line : lines) {
-//        if (line.size() < 10) continue;
+//        if (line.size() < 6) continue;
 //
-//        auto scored = scoreLineAgainstCategories(line, name);
+//        // MULTI-PRIORITY FILTER: Calculate relevance score
+//        int relevance_score = 0;
+//        if (!isRelevantToTarget(line, name, university, department, relevance_score)) {
+//            continue;
+//        }
+//
+//        auto scored = scoreLineAgainstCategories(line);
 //        string category = scored.first;
-//        int categoryScore = scored.second;
+//        int category_score = scored.second;
 //
-//        // REQUIRED: Check if line contains at least one name part
-//        bool hasName = false;
-//        if (!name.empty()) {
-//            string lowerLine = toLowerStr(line);
-//            auto nameParts = splitNameParts(name);
-//            for (const auto& part : nameParts) {
-//                if (lowerLine.find(part) != string::npos) {
-//                    hasName = true;
-//                    break;
+//        // Set confidence based on relevance score
+//        int confidence = 1;
+//        if (relevance_score >= 30) {
+//            confidence = 3; // High confidence (name match)
+//        }
+//        else if (relevance_score >= 20) {
+//            confidence = 2; // Medium confidence (university/department + context)
+//        }
+//
+//        bool accept = false;
+//        if (category_score >= 2) accept = true;
+//
+//        // Higher priority for lines with good relevance
+//        if (relevance_score >= 15) {
+//            accept = true;
+//            if (category.empty()) category = "Misc";
+//        }
+//
+//        if (accept) {
+//            string cat = category.empty() ? "Misc" : category;
+//            ExtractedFact f{ cat, line, sourceURL, confidence, relevance_score };
+//            knowledgeBase.push_back(f);
+//        }
+//        else {
+//            string low = toLowerStr(line);
+//            if ((low.find("phd") != string::npos || low.find("ph.d") != string::npos || low.find("cv") != string::npos)) {
+//                int phd_relevance = 0;
+//                if (isRelevantToTarget(line, name, university, department, phd_relevance) && phd_relevance >= 10) {
+//                    ExtractedFact f{ "Education", line, sourceURL, 2, phd_relevance };
+//                    knowledgeBase.push_back(f);
 //                }
 //            }
 //        }
-//        else {
-//            hasName = true; // No name provided, accept all
-//        }
-//
-//        if (hasName && categoryScore >= 2) {
-//            int relevanceScore = calculateRelevanceScore(line, name, university, department);
-//
-//            // Accept facts that have name presence and reasonable category score
-//            if (relevanceScore >= 6) {
-//                ExtractedFact f;
-//                f.category = category.empty() ? "Misc" : category;
-//                f.value = line;
-//                f.sourceURL = sourceURL;
-//                f.confidence = min(3, (relevanceScore / 5) + 1);
-//                knowledgeBase.push_back(f);
-//            }
-//        }
 //    }
-//}
-//
-//static bool isValidAcademicContact(const string& contact, const string& context) {
-//    string lowerContact = toLowerStr(contact);
-//    string lowerContext = toLowerStr(context);
-//
-//    // Reject obviously generic contacts
-//    vector<string> invalidPatterns = {
-//        "example", "test", "admin", "webmaster", "info@", "contact@",
-//        "support@", "noreply", "no-reply"
-//    };
-//
-//    for (const auto& pattern : invalidPatterns) {
-//        if (lowerContact.find(pattern) != string::npos) {
-//            return false;
-//        }
-//    }
-//
-//    // For emails, check if it looks like a personal/academic email
-//    if (lowerContact.find('@') != string::npos) {
-//        // Common academic email patterns
-//        vector<string> academicPatterns = {
-//            "ac.", ".edu", "univ-", "uni-", "campus"
-//        };
-//
-//        bool hasAcademicPattern = false;
-//        for (const auto& pattern : academicPatterns) {
-//            if (lowerContact.find(pattern) != string::npos) {
-//                hasAcademicPattern = true;
-//                break;
-//            }
-//        }
-//
-//        // If no academic pattern, require stronger context
-//        if (!hasAcademicPattern) {
-//            return calculateRelevanceScore(context, "", "", "") >= 8;
-//        }
-//    }
-//
-//    return true;
-//}
-//
-//
-//// === UTILITY: LOWERCASE + TRIM (token-level) ===
-//static string toLowerTrim(const string& s) {
-//    string out;
-//    out.reserve(s.size());
-//    for (char c : s)
-//        if (!isspace((unsigned char)c))
-//            out.push_back((char)tolower(c));
-//    return out;
-//}
-//
-//// === SIMPLE SIMILARITY CHECK ===
-//static bool roughlySame(const string& a, const string& b) {
-//    if (a == b) return true;
-//    string lowA = toLowerTrim(a), lowB = toLowerTrim(b);
-//    if (lowA.find(lowB) != string::npos || lowB.find(lowA) != string::npos)
-//        return true;
-//    // Token overlap
-//    istringstream sa(lowA), sb(lowB);
-//    set<string> ta, tb;
-//    string w;
-//    while (sa >> w) ta.insert(w);
-//    while (sb >> w) tb.insert(w);
-//    if (ta.empty() || tb.empty()) return false;
-//    int match = 0;
-//    for (auto& t : ta)
-//        if (tb.count(t)) ++match;
-//    double overlap = (double)match / max(ta.size(), tb.size());
-//    return overlap > 0.6;
 //}
 //
 //// ------------------ Post-Processing Filter ------------------
-//static void filterIrrelevantFacts(vector<ExtractedFact>& facts, const string& name,
-//    const string& university = "", const string& department = "") {
+//static void filterIrrelevantFacts(vector<ExtractedFact>& facts, const string& name, const string& university, const string& department) {
+//    if (name.empty() && university.empty() && department.empty()) return;
+//
 //    vector<ExtractedFact> filtered;
-//
 //    for (const auto& fact : facts) {
-//        bool keep = true;
-//
-//        // Basic relevance check
-//        if (!isRelevantToTarget(fact.value, name, university, department)) {
-//            keep = false;
-//        }
-//
-//        // Quality checks based on category
-//        if (keep) {
-//            if (fact.category.find("Contact") != string::npos) {
-//                keep = isValidAcademicContact(fact.value, fact.value);
-//            }
-//            else if (fact.category == "Designation") {
-//                // Designation should be reasonably short and contain title words
-//                if (fact.value.size() > 100 ||
-//                    fact.value.find("professor") == string::npos &&
-//                    fact.value.find("lecturer") == string::npos &&
-//                    fact.value.find("researcher") == string::npos) {
-//                    keep = false;
-//                }
-//            }
-//        }
-//
-//        // Remove duplicate facts (similar content)
-//        if (keep) {
-//            for (const auto& existing : filtered) {
-//                if (existing.category == fact.category &&
-//                    roughlySame(existing.value, fact.value)) {
-//                    keep = false;
-//                    break;
-//                }
-//            }
-//        }
-//
-//        if (keep) {
+//        int score = 0;
+//        if (isRelevantToTarget(fact.value, name, university, department, score) && score >= 10) {
 //            filtered.push_back(fact);
 //        }
 //    }
-//
 //    facts = filtered;
-//}
-//
-//// ------------------ ORIGINAL SUMMARY PRINTER ------------------
-//static void printSummary(const vector<ExtractedFact>& knowledgeBase) {
-//    if (knowledgeBase.empty()) {
-//        cout << "[SUMMARY] No facts extracted.\n";
-//        return;
-//    }
-//    // Group facts by category
-//    map<string, vector<pair<string, string>>> grouped;
-//    for (const auto& f : knowledgeBase) {
-//        grouped[f.category].push_back({ f.value, f.sourceURL });
-//    }
-//
-//    cout << "\n===== Extracted Knowledge Summary (Old view) =====\n";
-//    for (const auto& p : grouped) {
-//        cout << "\n-> " << p.first << ":\n";
-//        // dedupe by value
-//        set<string> seen;
-//        for (const auto& valsrc : p.second) {
-//            string val = valsrc.first;
-//            string src = valsrc.second;
-//            if (seen.find(val) != seen.end()) continue;
-//            seen.insert(val);
-//            cout << "   - " << val << "  (source: " << src << ")\n";
-//        }
-//    }
-//    cout << "\n=================================================\n";
-//}
-//
-//// -------------------------------------------------------------
-//// 🔄 NEW FACT FUSION + NARRATIVE SUMMARY ADDITION
-//// -------------------------------------------------------------
-//
-//// === STRUCT FOR UNIFIED FACTS ===
-//struct UnifiedFact {
-//    string category;
-//    string value;
-//    set<string> sources;
-//    int confidence = 1;
-//};
-//
-//
-//// === FACT FUSION ===
-//static vector<UnifiedFact> fuseFacts(const vector<ExtractedFact>& rawFacts) {
-//    vector<UnifiedFact> fused;
-//    for (auto& f : rawFacts) {
-//        bool merged = false;
-//        for (auto& uf : fused) {
-//            if (uf.category == f.category && roughlySame(uf.value, f.value)) {
-//                uf.sources.insert(f.sourceURL);
-//                uf.confidence = (int)uf.sources.size();
-//                merged = true;
-//                break;
-//            }
-//        }
-//        if (!merged) {
-//            UnifiedFact u;
-//            u.category = f.category;
-//            u.value = f.value;
-//            u.sources.insert(f.sourceURL);
-//            fused.push_back(u);
-//        }
-//    }
-//    return fused;
-//}
-//
-//// === NARRATIVE SUMMARY PARAGRAPH GENERATOR (narrative tone) ===
-//static string generateSummaryParagraph(const vector<UnifiedFact>& facts, const string& name) {
-//    stringstream ss;
-//    string person = name;
-//    if (person.empty()) person = "This individual";
-//
-//    string designation, department, education;
-//    vector<string> researches;
-//    vector<string> misc;
-//
-//    for (const auto& f : facts) {
-//        string cat = toLowerStr(f.category);
-//        string val = f.value;
-//
-//        if (cat.find("designation") != string::npos || cat.find("role") != string::npos)
-//            designation = val;
-//        else if (cat.find("department") != string::npos)
-//            department = val;
-//        else if (cat.find("education") != string::npos || cat.find("degree") != string::npos)
-//            education = val;
-//        else if (cat.find("research") != string::npos || cat.find("special") != string::npos)
-//            researches.push_back(val);
-//        else {
-//            misc.push_back(val);
-//        }
-//    }
-//
-//    // Start narrative
-//    ss << person;
-//
-//    if (!designation.empty()) {
-//        string lowDes = toLowerStr(designation);
-//        if (lowDes.find("professor") != string::npos || lowDes.find("lecturer") != string::npos || lowDes.find("assistant") != string::npos || lowDes.find("researcher") != string::npos) {
-//            ss << " is " << designation;
-//        }
-//        else {
-//            ss << " serves as " << designation;
-//        }
-//        if (!department.empty()) ss << " in " << department;
-//        ss << ". ";
-//    }
-//    else if (!department.empty()) {
-//        ss << " is associated with the " << department << ". ";
-//    }
-//    else {
-//        ss << " has public professional information available. ";
-//    }
-//
-//    if (!researches.empty()) {
-//        set<string> seen;
-//        vector<string> uniq;
-//        for (auto& r : researches) {
-//            if (seen.insert(r).second) uniq.push_back(r);
-//        }
-//        ss << "Their research interests include ";
-//        for (size_t i = 0; i < uniq.size(); ++i) {
-//            ss << uniq[i];
-//            if (i + 1 < uniq.size()) ss << ", ";
-//        }
-//        ss << ". ";
-//    }
-//
-//    if (!education.empty()) {
-//        ss << "They hold " << education << ". ";
-//    }
-//
-//    if (!misc.empty()) {
-//        ss << "Additional notes: ";
-//        for (size_t i = 0; i < misc.size(); ++i) {
-//            ss << misc[i];
-//            if (i + 1 < misc.size()) ss << "; ";
-//        }
-//        ss << ". ";
-//    }
-//
-//    return ss.str();
-//}
-//
-//// === ENHANCED PRINT: OLD OUTPUT + FUSED FACTS + NARRATIVE ===
-//static void printSummaryWithFusion(const vector<ExtractedFact>& rawFacts, const string& name) {
-//    cout << "\n\n====================\n";
-//    cout << "📋 Original Extracted Facts (Old View)\n";
-//    cout << "====================\n";
-//    if (rawFacts.empty()) {
-//        cout << "No extracted facts available.\n";
-//    }
-//    else {
-//        map<string, vector<pair<string, string>>> grouped;
-//        for (const auto& f : rawFacts) grouped[f.category].push_back({ f.value, f.sourceURL });
-//        for (const auto& p : grouped) {
-//            cout << "\n-> " << p.first << ":\n";
-//            set<string> seen;
-//            for (const auto& valsrc : p.second) {
-//                string val = valsrc.first;
-//                string src = valsrc.second;
-//                if (seen.find(val) != seen.end()) continue;
-//                seen.insert(val);
-//                cout << "   - " << val << "  (source: " << src << ")\n";
-//            }
-//        }
-//    }
-//
-//    // fusion
-//    cout << "\n\n====================\n";
-//    cout << "🔄 Unified Facts (After Fusion)\n";
-//    cout << "====================\n";
-//    auto fused = fuseFacts(rawFacts);
-//    if (fused.empty()) {
-//        cout << "(no unified facts produced)\n";
-//    }
-//    else {
-//        for (auto& uf : fused) {
-//            cout << "[" << uf.category << "] " << uf.value << "  (sources: " << uf.sources.size() << ")\n";
-//            for (auto& s : uf.sources) cout << "     ↳ " << s << "\n";
-//        }
-//    }
-//
-//    // narrative
-//    cout << "\n\n====================\n";
-//    cout << "📝 Narrative Summary Paragraph\n";
-//    cout << "====================\n";
-//    string paragraph = generateSummaryParagraph(fused, name);
-//    if (paragraph.empty()) {
-//        cout << "(no narrative could be generated)\n";
-//    }
-//    else {
-//        cout << paragraph << "\n";
-//    }
 //}
 //
 //// ------------------ cURL fetch with guards ------------------
@@ -1163,11 +751,261 @@
 //    return buffer;
 //}
 //
+//// ------------------ SUMMARY GENERATOR ------------------
+//static void printSummary(const vector<ExtractedFact>& knowledgeBase) {
+//    if (knowledgeBase.empty()) {
+//        cout << "[SUMMARY] No facts extracted.\n";
+//        return;
+//    }
+//    map<string, vector<pair<string, string>>> grouped;
+//    for (const auto& f : knowledgeBase) {
+//        grouped[f.category].push_back({ f.value, f.sourceURL });
+//    }
+//
+//    cout << "\n===== Extracted Knowledge Summary =====\n";
+//    for (const auto& p : grouped) {
+//        cout << "\n-> " << p.first << ":\n";
+//        set<string> seen;
+//        for (const auto& valsrc : p.second) {
+//            string val = valsrc.first;
+//            string src = valsrc.second;
+//            if (seen.find(val) != seen.end()) continue;
+//            seen.insert(val);
+//            cout << "   - " << val << "  (source: " << src << ")\n";
+//        }
+//    }
+//    cout << "\n=======================================\n";
+//}
+//
+//// ------------------ FUSION + NARRATIVE ENGINE ------------------
+//struct UnifiedFact {
+//    string category;
+//    string value;
+//    set<string> sources;
+//    int confidence = 1;
+//    int relevance_score = 0;
+//};
+//
+//static string toLowerTrim(const string& s) {
+//    string out;
+//    out.reserve(s.size());
+//    for (char c : s)
+//        if (!isspace((unsigned char)c))
+//            out.push_back((char)tolower(c));
+//    return out;
+//}
+//
+//static bool roughlySame(const string& a, const string& b) {
+//    if (a == b) return true;
+//    string lowA = toLowerTrim(a), lowB = toLowerTrim(b);
+//    if (lowA.find(lowB) != string::npos || lowB.find(lowA) != string::npos)
+//        return true;
+//
+//    istringstream sa(lowA), sb(lowB);
+//    set<string> ta, tb;
+//    string w;
+//    while (sa >> w) ta.insert(w);
+//    while (sb >> w) tb.insert(w);
+//    if (ta.empty() || tb.empty()) return false;
+//    int match = 0;
+//    for (auto& t : ta)
+//        if (tb.count(t)) ++match;
+//    double overlap = (double)match / max(ta.size(), tb.size());
+//    return overlap > 0.6;
+//}
+//
+//static vector<UnifiedFact> fuseFacts(const vector<ExtractedFact>& rawFacts) {
+//    vector<UnifiedFact> fused;
+//    for (auto& f : rawFacts) {
+//        bool merged = false;
+//        for (auto& uf : fused) {
+//            if (uf.category == f.category && roughlySame(uf.value, f.value)) {
+//                uf.sources.insert(f.sourceURL);
+//                uf.confidence = max(uf.confidence, f.confidence);
+//                uf.relevance_score = max(uf.relevance_score, f.relevance_score);
+//                merged = true;
+//                break;
+//            }
+//        }
+//        if (!merged) {
+//            UnifiedFact u;
+//            u.category = f.category;
+//            u.value = f.value;
+//            u.sources.insert(f.sourceURL);
+//            u.confidence = f.confidence;
+//            u.relevance_score = f.relevance_score;
+//            fused.push_back(u);
+//        }
+//    }
+//    return fused;
+//}
+//
+//static string generateSummaryParagraph(const vector<UnifiedFact>& facts, const string& name, const string& university, const string& department) {
+//    stringstream ss;
+//    string person = name;
+//    if (person.empty()) person = "This individual";
+//
+//    string designation, dept, education;
+//    vector<string> researches;
+//    vector<string> contacts;
+//    vector<string> misc;
+//
+//    // Sort facts by relevance score (highest first)
+//    vector<UnifiedFact> sortedFacts = facts;
+//    sort(sortedFacts.begin(), sortedFacts.end(), [](const UnifiedFact& a, const UnifiedFact& b) {
+//        return a.relevance_score > b.relevance_score;
+//        });
+//
+//    for (const auto& f : sortedFacts) {
+//        string cat = toLowerStr(f.category);
+//        string val = f.value;
+//
+//        if (cat.find("designation") != string::npos || cat.find("role") != string::npos)
+//            designation = val;
+//        else if (cat.find("department") != string::npos)
+//            dept = val;
+//        else if (cat.find("education") != string::npos || cat.find("degree") != string::npos)
+//            education = val;
+//        else if (cat.find("research") != string::npos || cat.find("special") != string::npos)
+//            researches.push_back(val);
+//        else if (cat.find("contact") != string::npos)
+//            contacts.push_back(val);
+//        else if (cat.find("honor") != string::npos || cat.find("award") != string::npos)
+//            misc.push_back(val);
+//    }
+//
+//    ss << person;
+//
+//    if (!designation.empty()) {
+//        string lowDes = toLowerStr(designation);
+//        if (lowDes.find("professor") != string::npos || lowDes.find("lecturer") != string::npos ||
+//            lowDes.find("assistant") != string::npos || lowDes.find("researcher") != string::npos) {
+//            ss << " is " << designation;
+//        }
+//        else {
+//            ss << " serves as " << designation;
+//        }
+//        if (!dept.empty()) ss << " in " << dept;
+//        else if (!department.empty()) ss << " in " << department;
+//        ss << ". ";
+//    }
+//    else if (!dept.empty() || !department.empty()) {
+//        ss << " is associated with the " << (dept.empty() ? department : dept);
+//        if (!university.empty()) ss << " at " << university;
+//        ss << ". ";
+//    }
+//    else if (!university.empty()) {
+//        ss << " is affiliated with " << university << ". ";
+//    }
+//    else {
+//        ss << " has public professional information available. ";
+//    }
+//
+//    if (!researches.empty()) {
+//        set<string> seen;
+//        vector<string> uniq;
+//        for (auto& r : researches) {
+//            if (seen.insert(r).second) uniq.push_back(r);
+//        }
+//        if (!uniq.empty()) {
+//            ss << "Their research interests include ";
+//            for (size_t i = 0; i < uniq.size(); ++i) {
+//                ss << uniq[i];
+//                if (i + 1 < uniq.size()) ss << ", ";
+//            }
+//            ss << ". ";
+//        }
+//    }
+//
+//    if (!education.empty()) {
+//        ss << "They hold " << education << ". ";
+//    }
+//
+//    if (!contacts.empty()) {
+//        ss << "Contact information: ";
+//        for (size_t i = 0; i < contacts.size(); ++i) {
+//            ss << contacts[i];
+//            if (i + 1 < contacts.size()) ss << ", ";
+//        }
+//        ss << ". ";
+//    }
+//
+//    if (!misc.empty()) {
+//        ss << "Notable achievements: ";
+//        for (size_t i = 0; i < misc.size(); ++i) {
+//            ss << misc[i];
+//            if (i + 1 < misc.size()) ss << "; ";
+//        }
+//    }
+//
+//    return ss.str();
+//}
+//
+//static void printSummaryWithFusion(const vector<ExtractedFact>& rawFacts, const string& name, const string& university, const string& department) {
+//    cout << "\n\n====================\n";
+//    cout << "📋 Original Extracted Facts (Sorted by Relevance)\n";
+//    cout << "====================\n";
+//    if (rawFacts.empty()) {
+//        cout << "No extracted facts available.\n";
+//    }
+//    else {
+//        // Sort by relevance score
+//        vector<ExtractedFact> sortedFacts = rawFacts;
+//        sort(sortedFacts.begin(), sortedFacts.end(), [](const ExtractedFact& a, const ExtractedFact& b) {
+//            return a.relevance_score > b.relevance_score;
+//            });
+//
+//        map<string, vector<pair<string, string>>> grouped;
+//        for (const auto& f : sortedFacts) {
+//            grouped[f.category].push_back({ f.value + " [Score: " + to_string(f.relevance_score) + "]", f.sourceURL });
+//        }
+//        for (const auto& p : grouped) {
+//            cout << "\n-> " << p.first << ":\n";
+//            set<string> seen;
+//            for (const auto& valsrc : p.second) {
+//                string val = valsrc.first;
+//                string src = valsrc.second;
+//                if (seen.find(val) != seen.end()) continue;
+//                seen.insert(val);
+//                cout << "   - " << val << "  (source: " << src << ")\n";
+//            }
+//        }
+//    }
+//
+//    auto fused = fuseFacts(rawFacts);
+//    cout << "\n\n====================\n";
+//    cout << "🔄 Unified Facts (After Fusion - Sorted by Relevance)\n";
+//    cout << "====================\n";
+//    if (fused.empty()) {
+//        cout << "(no unified facts produced)\n";
+//    }
+//    else {
+//        // Sort by relevance score
+//        sort(fused.begin(), fused.end(), [](const UnifiedFact& a, const UnifiedFact& b) {
+//            return a.relevance_score > b.relevance_score;
+//            });
+//
+//        for (auto& uf : fused) {
+//            cout << "[" << uf.category << "] " << uf.value << "  (relevance: " << uf.relevance_score << ", sources: " << uf.sources.size() << ")\n";
+//            for (auto& s : uf.sources) cout << "     ↳ " << s << "\n";
+//        }
+//    }
+//
+//    cout << "\n\n====================\n";
+//    cout << "📝 Narrative Summary Paragraph\n";
+//    cout << "====================\n";
+//    string paragraph = generateSummaryParagraph(fused, name, university, department);
+//    if (paragraph.empty()) {
+//        cout << "(no narrative could be generated)\n";
+//    }
+//    else {
+//        cout << paragraph << "\n";
+//    }
+//}
+//
 //// ------------------ MAIN ------------------
 //int main() {
-//    SetConsoleOutputCP(CP_UTF8);
-//    SetConsoleCP(CP_UTF8);
-//    std::ios::sync_with_stdio(false);
+//    ios::sync_with_stdio(false);
 //    cin.tie(nullptr);
 //
 //    curl_global_init(CURL_GLOBAL_DEFAULT);
@@ -1192,7 +1030,6 @@
 //
 //    string enc = urlEncode(query);
 //
-//    // ------------------ Google Custom Search API settings ------------------
 //    string apiKey = "AIzaSyCLUMLZaNTNeD3N1E2IJ2ODSPuLkdfj0Vo";
 //    string cx = "c499c8c7c5dde46d4";
 //    if (apiKey == "REPLACE_WITH_YOUR_API_KEY" || cx == "REPLACE_WITH_YOUR_CX") {
@@ -1204,8 +1041,8 @@
 //    string apiUrl = "https://www.googleapis.com/customsearch/v1?q=" + enc + "&key=" + apiKey + "&cx=" + cx;
 //
 //    cout << "[INFO] Querying Google Custom Search API...\n" << flush;
+//    cout << "[INFO] Search terms - Name: '" << name << "', University: '" << university << "', Department: '" << department << "'\n" << flush;
 //
-//    // Perform API request (simple, with timeouts)
 //    CURL* curl = curl_easy_init();
 //    if (!curl) {
 //        cerr << "[ERROR] curl init failed for API request\n";
@@ -1230,7 +1067,7 @@
 //    }
 //    curl_easy_cleanup(curl);
 //
-//    vector<ExtractedFact> knowledgeBase; // aggregator for all pages
+//    vector<ExtractedFact> knowledgeBase;
 //
 //    try {
 //        json j = json::parse(apiResponse);
@@ -1263,7 +1100,6 @@
 //                continue;
 //            }
 //
-//            // 1) Fetch page with cURL (timeouts + max size)
 //            string pageHTML = fetchPage(link, CURL_CONNECT_TIMEOUT, CURL_TOTAL_TIMEOUT, MAX_DOWNLOAD_BYTES);
 //            if (pageHTML.empty()) {
 //                cout << "   [WARN] Failed to fetch or download too large. Skipping.\n" << flush;
@@ -1272,7 +1108,6 @@
 //            }
 //            cout << "   [OK] fetched " << pageHTML.size() << " bytes\n" << flush;
 //
-//            // 1a) LAYER 1: raw HTML quick scan for mailto: / tel: (with proximity check)
 //            auto rawFoundWithPos = scanHTMLForMailtoTelWithPos(pageHTML);
 //            if (!rawFoundWithPos.empty()) {
 //                bool anyPrinted = false;
@@ -1281,13 +1116,12 @@
 //                    string candidate = get<1>(t);
 //                    size_t posInHtml = get<2>(t);
 //                    bool nearby = true;
-//                    if (!name.empty()) {
-//                        // require the name to be near the mailto/tel (300 chars default)
-//                        nearby = isNearby(pageHTML, posInHtml, name, 300);
+//                    if (!name.empty() || !university.empty() || !department.empty()) {
+//                        nearby = isNearbyAnyTerm(pageHTML, posInHtml, name, university, department, 300);
 //                    }
-//                    if (!nearby) continue; // skip links not near the person's name
+//                    if (!nearby) continue;
 //                    if (!anyPrinted) {
-//                        cout << "   [RAWSCAN] Found contacts in HTML attributes (near name):\n" << flush;
+//                        cout << "   [RAWSCAN] Found contacts in HTML attributes (near search terms):\n" << flush;
 //                        anyPrinted = true;
 //                    }
 //                    cout << "      " << label << ": " << candidate << "\n";
@@ -1295,12 +1129,15 @@
 //                    if (label == "Email") { f.category = "Contact/Email"; f.value = candidate; }
 //                    else { f.category = "Contact/Phone"; f.value = candidate; }
 //                    f.sourceURL = link;
+//                    // Calculate relevance score for contact
+//                    int contact_score = 0;
+//                    isRelevantToTarget(candidate, name, university, department, contact_score);
+//                    f.relevance_score = contact_score;
 //                    knowledgeBase.push_back(f);
 //                }
 //                if (anyPrinted) cout << flush;
 //            }
 //
-//            // KEYWORD PREFILTER (FAST)
 //            if (!containsAnyKeywordCaseInsensitive(pageHTML, keywordFilters)) {
 //                cout << "   [SKIP] No contact-related keywords found (email/contact/phone/@). Skipping heavy parsing.\n" << flush;
 //                ++count;
@@ -1310,7 +1147,6 @@
 //                cout << "   [INFO] Contact-related keywords found — running detailed extraction...\n" << flush;
 //            }
 //
-//            // 2) Attempt Lexbor parsing with timeout
 //            cout << "   Parsing with Lexbor (timeout " << LEXBOR_TIMEOUT.count() << "s)...\n" << flush;
 //            string content = extractTextFromHTML_withTimeout(pageHTML, LEXBOR_TIMEOUT);
 //
@@ -1322,28 +1158,21 @@
 //                cout << "   [OK] Lexbor returned content (" << content.size() << " chars)\n" << flush;
 //            }
 //
-//            // Apply context filtering to focus on target person
-//            if (!name.empty()) {
+//            if (!name.empty() || !university.empty() || !department.empty()) {
 //                content = extractTargetContext(content, name, university, department);
-//                cout << "   [CONTEXT] Extracted " << content.size() << " chars around target person\n" << flush;
+//                cout << "   [CONTEXT] Extracted " << content.size() << " chars around search terms\n" << flush;
 //            }
 //
-//            // Clean noisy common phrases before analysis
 //            content = removeNoisePhrases(content);
 //
-//            // Truncate content for safety
 //            if (content.size() > MAX_CONTENT_CHARS) {
 //                cout << "   [INFO] Truncating extracted content to " << MAX_CONTENT_CHARS << " characters for safe scanning.\n" << flush;
 //                content = content.substr(0, MAX_CONTENT_CHARS);
 //            }
 //
-//            // 3) FACT SCAN (Layer 2 & 3)
-//            // 3a) Scan content for semantic facts and record them with source attribution (name-aware)
 //            scanForFacts(content, link, knowledgeBase, name, university, department);
 //
-//            // 3b) Token-based contact detection, but only accept contacts near name in extracted content
-//            // In the main function, replace the contact detection section with:
-//            auto contacts = extractContactsTokenBased(content, name, university, department);
+//            auto contacts = extractContactsTokenBased(content, name);
 //            for (auto& s : contacts) {
 //                string key, candidate;
 //                if (s.rfind("Email:", 0) == 0) { key = "Contact/Email"; candidate = s.substr(7); }
@@ -1351,71 +1180,50 @@
 //                else { key = "Contact"; candidate = s; }
 //
 //                bool accept = true;
-//                if (!name.empty()) {
+//                if (!name.empty() || !university.empty() || !department.empty()) {
 //                    string lowerC = toLowerStr(candidate);
 //                    string lowerContent = toLowerStr(content);
 //                    size_t pos = lowerContent.find(lowerC);
 //
 //                    if (pos == string::npos) {
-//                        // fallback: search fragment
 //                        string frag = candidate;
 //                        if (frag.size() > 8) frag = frag.substr(0, 8);
 //                        size_t fpos = lowerContent.find(toLowerStr(frag));
 //                        if (fpos != string::npos) pos = fpos;
 //                    }
-//
 //                    if (pos == string::npos) {
 //                        accept = false;
 //                    }
 //                    else {
-//                        // Extract generous context around the contact
-//                        size_t contextStart = (pos > 400) ? pos - 400 : 0;
-//                        size_t contextEnd = min(pos + 400, content.size());
-//                        string contactContext = content.substr(contextStart, contextEnd - contextStart);
-//
-//                        // Use the enhanced relevance scoring with university/department
-//                        int relevanceScore = calculateRelevanceScore(contactContext, name, university, department);
-//
-//                        // More flexible acceptance when university is provided
-//                        if (!university.empty()) {
-//                            accept = (relevanceScore >= 5); // Lower threshold with university context
-//                        }
-//                        else {
-//                            accept = (relevanceScore >= 6); // Standard threshold for name-only
-//                        }
-//
-//                        // DEBUG: Show why contacts are being accepted/rejected
+//                        accept = isNearbyAnyTerm(content, pos, name, university, department, 100);
 //                        if (accept) {
-//                            cout << "   [CONTACT ACCEPTED] " << key << ": " << candidate << " (score: " << relevanceScore << ")\n";
-//                        }
-//                        else {
-//                            cout << "   [CONTACT REJECTED] " << key << ": " << candidate << " (score: " << relevanceScore << ")\n";
+//                            size_t contextStart = (pos > 200) ? pos - 200 : 0;
+//                            size_t contextEnd = min(pos + 200, content.size());
+//                            string contactContext = content.substr(contextStart, contextEnd - contextStart);
+//                            int context_score = 0;
+//                            accept = isRelevantToTarget(contactContext, name, university, department, context_score) && context_score >= 10;
 //                        }
 //                    }
 //                }
-//
-//                if (accept) {
-//                    ExtractedFact f;
-//                    f.category = key;
-//                    f.value = candidate;
-//                    f.sourceURL = link;
-//                    knowledgeBase.push_back(f);
-//                }
+//                if (!accept) continue;
+//                ExtractedFact f;
+//                f.category = key;
+//                f.value = candidate;
+//                f.sourceURL = link;
+//                int contact_score = 0;
+//                isRelevantToTarget(candidate, name, university, department, contact_score);
+//                f.relevance_score = contact_score;
+//                knowledgeBase.push_back(f);
 //            }
 //
 //            cout << "   [INFO] Extraction finished for this URL. Results added to knowledge base.\n" << flush;
-//
 //            ++count;
 //        }
 //
-//        // Final filtering to remove any remaining irrelevant facts
 //        filterIrrelevantFacts(knowledgeBase, name, university, department);
 //
-//        // After processing pages, print final summary grouped by category (old view)
 //        printSummary(knowledgeBase);
-//
-//        // Also print the fused + narrative summary (new view)
-//        printSummaryWithFusion(knowledgeBase, name);
+//        printSummaryWithFusion(knowledgeBase, name, university, department);
 //
 //    }
 //    catch (const std::exception& e) {
