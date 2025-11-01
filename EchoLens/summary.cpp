@@ -25,7 +25,7 @@
 //using json = nlohmann::json;
 //
 //// ---------------------- Quick tunables ----------------------
-//static int maxProcess = 3; // DEBUG default; change to 10+ for production
+//static int maxProcess = 5; // DEBUG default; change to 10+ for production
 //static vector<string> keywordFilters = { "email", "contact", "phone", "@" };
 //// -------------------- Configuration --------------------
 //static const long CURL_CONNECT_TIMEOUT = 10L;      // seconds to establish connection

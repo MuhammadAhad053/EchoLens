@@ -131,6 +131,7 @@ Normaliz.lib;%(AdditionalDependencies)</AdditionalDependencies>
     <ClCompile Include="hitormiss.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="new.cpp" />
+    <ClCompile Include="nlp.cpp" />
     <ClCompile Include="patched.cpp" />
     <ClCompile Include="summary.cpp" />
     <ClCompile Include="trial.cpp" />
