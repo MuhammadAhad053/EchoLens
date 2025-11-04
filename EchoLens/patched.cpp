@@ -1,4 +1,4 @@
-﻿//// Combined: Gemini entity extraction (from trial.cpp) + Lexbor-based fact extraction & classification (from categorized.cpp)
+﻿////// Combined: Gemini entity extraction (from trial.cpp) + Lexbor-based fact extraction & classification (from categorized.cpp)
 // Single-file program. Requires:
 //  - libcurl
 //  - lexbor (headers + library)
@@ -442,7 +442,7 @@ static void scanForFacts(const string& content, const string& sourceURL, vector<
     }
 }
 
-static bool isNearName(const string& html, size_t position, const string& name, int vicinity = 600) {
+static bool isNearName(const string& html, size_t position, const string& name, int vicinity = 200) {
     if (name.empty()) return true;
     string lowerHtml = toLowerStr(html);
     string lowerName = toLowerStr(name);
@@ -455,36 +455,109 @@ static bool isNearName(const string& html, size_t position, const string& name, 
 // ------------------ Fast raw HTML scan for mailto: / tel: ------------------
 static vector<string> scanHTMLForMailtoTel(const string& html, const string& name = "") {
     vector<string> results;
-    string lower = toLowerStr(html);
-    size_t pos = 0;
+    if (html.empty()) return results;
 
-    while (true) {
-        size_t mpos = lower.find("mailto:", pos);
-        if (mpos == string::npos) break;
-        if (!isNearName(lower, mpos, name)) { pos = mpos + 7; continue; } // skip if far from name
+    string lowerHtml = toLowerStr(html);
+    string lowerName = toLowerStr(name);
 
-        size_t start = mpos + 7;
-        size_t end = start;
-        while (end < html.size() && html[end] != '"' && html[end] != '\'' && html[end] != '>' && !isspace((unsigned char)html[end])) ++end;
-        string candidate = trimPunctEdges(html.substr(start, end - start));
-        if (!candidate.empty()) results.push_back(string("Email: ") + candidate);
-        pos = end;
+    // --- Step 1: find all occurrences of the name ---
+    vector<size_t> namePositions;
+    if (!lowerName.empty()) {
+        size_t np = lowerHtml.find(lowerName);
+        while (np != string::npos) {
+            namePositions.push_back(np);
+            np = lowerHtml.find(lowerName, np + lowerName.size());
+        }
     }
 
-    pos = 0;
-    while (true) {
-        size_t tpos = lower.find("tel:", pos);
-        if (tpos == string::npos) break;
-        if (!isNearName(lower, tpos, name)) { pos = tpos + 4; continue; } // skip if far
+    // --- Step 2: if no name, process whole HTML (fallback) ---
+    if (namePositions.empty()) namePositions.push_back(0);
 
-        size_t start = tpos + 4;
-        size_t end = start;
-        while (end < html.size() && html[end] != '"' && html[end] != '\'' && html[end] != '>' && !isspace((unsigned char)html[end])) ++end;
-        string candidate = trimPunctEdges(html.substr(start, end - start));
-        if (!candidate.empty()) results.push_back(string("Phone: ") + candidate);
-        pos = end;
+    const int vicinity = 800; // search radius around each name
+
+    // --- Step 3: scan around each name occurrence ---
+    for (size_t np : namePositions) {
+        size_t start = (np > (size_t)vicinity ? np - vicinity : 0);
+        size_t end = min(html.size(), np + lowerName.size() + vicinity);
+        string segment = html.substr(start, end - start);
+        string lowerSegment = toLowerStr(segment);
+
+        // --- 3a. mailto: links ---
+        size_t pos = 0;
+        while (true) {
+            size_t mpos = lowerSegment.find("mailto:", pos);
+            if (mpos == string::npos) break;
+
+            size_t startMail = mpos + 7;
+            size_t endMail = startMail;
+            while (endMail < segment.size() &&
+                !isspace((unsigned char)segment[endMail]) &&
+                segment[endMail] != '"' &&
+                segment[endMail] != '\'' &&
+                segment[endMail] != '>') endMail++;
+
+            string candidate = trimPunctEdges(segment.substr(startMail, endMail - startMail));
+            if (!candidate.empty() && candidate.find('@') != string::npos)
+                results.push_back("Email: " + candidate);
+
+            pos = endMail;
+        }
+
+        // --- 3b. plain '@' text emails ---
+        pos = 0;
+        while (true) {
+            size_t atPos = segment.find('@', pos);
+            if (atPos == string::npos) break;
+
+            // find left boundary
+            size_t left = atPos;
+            while (left > 0 &&
+                (isalnum((unsigned char)segment[left - 1]) ||
+                    segment[left - 1] == '.' ||
+                    segment[left - 1] == '_' ||
+                    segment[left - 1] == '-'))
+                left--;
+
+            // find right boundary
+            size_t right = atPos + 1;
+            while (right < segment.size() &&
+                (isalnum((unsigned char)segment[right]) ||
+                    segment[right] == '.' ||
+                    segment[right] == '-'))
+                right++;
+
+            string candidate = trimPunctEdges(segment.substr(left, right - left));
+            if (candidate.find('@') != string::npos)
+                results.push_back("Email: " + candidate);
+
+            pos = right;
+        }
+
+        // --- 3c. tel: links ---
+        pos = 0;
+        while (true) {
+            size_t tpos = lowerSegment.find("tel:", pos);
+            if (tpos == string::npos) break;
+
+            size_t startTel = tpos + 4;
+            size_t endTel = startTel;
+            while (endTel < segment.size() &&
+                !isspace((unsigned char)segment[endTel]) &&
+                segment[endTel] != '"' &&
+                segment[endTel] != '\'' &&
+                segment[endTel] != '>') endTel++;
+
+            string candidate = trimPunctEdges(segment.substr(startTel, endTel - startTel));
+            if (!candidate.empty())
+                results.push_back("Phone: " + candidate);
+
+            pos = endTel;
+        }
     }
 
+    // --- Step 4: deduplicate results ---
+    sort(results.begin(), results.end());
+    results.erase(unique(results.begin(), results.end()), results.end());
     return results;
 }
 
@@ -923,9 +996,7 @@ int main() {
         auto contacts = extractContactsTokenBased(content, name + " " + university + " " + department);
         for (auto& s : contacts) {
             ExtractedFact f;
-            if (s.rfind("Email:", 0) == 0) { f.category = "Contact/Email"; f.value = s.substr(7); }
-            else if (s.rfind("Phone:", 0) == 0) { f.category = "Contact/Phone"; f.value = s.substr(7); }
-            else { f.category = "Contact"; f.value = s; }
+            if (s.rfind("Phone:", 0) == 0) { f.category = "Contact/Phone"; f.value = s.substr(7); }
             f.sourceURL = link;
             knowledgeBase.push_back(f);
         }
