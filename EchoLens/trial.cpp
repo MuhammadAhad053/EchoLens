@@ -1,4 +1,4 @@
-﻿//// Combined: Gemini entity extraction (from trial.cpp) + Lexbor-based fact extraction & classification (from categorized.cpp)
+﻿////// Combined: Gemini entity extraction (from trial.cpp) + Lexbor-based fact extraction & classification (from categorized.cpp)
 //// Single-file program. Requires:
 ////  - libcurl
 ////  - lexbor (headers + library)
@@ -442,34 +442,49 @@
 //    }
 //}
 //
+//static bool isNearName(const string& html, size_t position, const string& name, int vicinity = 600) {
+//    if (name.empty()) return true;
+//    string lowerHtml = toLowerStr(html);
+//    string lowerName = toLowerStr(name);
+//    size_t namePos = lowerHtml.find(lowerName);
+//    if (namePos == string::npos) return false;
+//    return (position >= (namePos > vicinity ? namePos - vicinity : 0) &&
+//        position <= namePos + lowerName.size() + vicinity);
+//}
+//
 //// ------------------ Fast raw HTML scan for mailto: / tel: ------------------
-//static vector<string> scanHTMLForMailtoTel(const string& html) {
+//static vector<string> scanHTMLForMailtoTel(const string& html, const string& name = "") {
 //    vector<string> results;
 //    string lower = toLowerStr(html);
 //    size_t pos = 0;
+//
 //    while (true) {
 //        size_t mpos = lower.find("mailto:", pos);
 //        if (mpos == string::npos) break;
+//        if (!isNearName(lower, mpos, name)) { pos = mpos + 7; continue; } // skip if far from name
+//
 //        size_t start = mpos + 7;
 //        size_t end = start;
 //        while (end < html.size() && html[end] != '"' && html[end] != '\'' && html[end] != '>' && !isspace((unsigned char)html[end])) ++end;
-//        string candidate = html.substr(start, end - start);
-//        candidate = trimPunctEdges(candidate);
+//        string candidate = trimPunctEdges(html.substr(start, end - start));
 //        if (!candidate.empty()) results.push_back(string("Email: ") + candidate);
 //        pos = end;
 //    }
+//
 //    pos = 0;
 //    while (true) {
 //        size_t tpos = lower.find("tel:", pos);
 //        if (tpos == string::npos) break;
+//        if (!isNearName(lower, tpos, name)) { pos = tpos + 4; continue; } // skip if far
+//
 //        size_t start = tpos + 4;
 //        size_t end = start;
 //        while (end < html.size() && html[end] != '"' && html[end] != '\'' && html[end] != '>' && !isspace((unsigned char)html[end])) ++end;
-//        string candidate = html.substr(start, end - start);
-//        candidate = trimPunctEdges(candidate);
+//        string candidate = trimPunctEdges(html.substr(start, end - start));
 //        if (!candidate.empty()) results.push_back(string("Phone: ") + candidate);
 //        pos = end;
 //    }
+//
 //    return results;
 //}
 //
@@ -725,51 +740,121 @@
 //    cout << "\n=======================================\n";
 //}
 //
-///*  Returns slices of the raw HTML that contain at least one occurrence
-//    of the name (case–insensitive) plus up to N characters on each side.
-//    We do a *very* cheap string search first;  if the name never appears
-//    we return empty → page will be skipped completely.                   */
-//static string extractVicinityAroundName(const string& html,
-//    const string& name,
-//    size_t radius = 600)
-//{
-//    if (name.empty() || html.size() < name.size()) return string();
+//static string extractVicinityText(const string& content, const string& name, int radius = 200) {
+//    if (name.empty() || content.empty()) return content;
+//    string lowerContent = toLowerStr(content);
+//    string lowerName = toLowerStr(name);
+//    size_t pos = lowerContent.find(lowerName);
+//    if (pos == string::npos) return content.substr(0, min<size_t>(content.size(), MAX_CONTENT_CHARS));
 //
-//    const string lowHtml = toLowerStr(html);
-//    const string lowName = toLowerStr(name);
+//    size_t start = (pos > radius) ? pos - radius : 0;
+//    size_t end = min(content.size(), pos + name.size() + radius);
+//    return content.substr(start, end - start);
+//}
 //
-//    vector<pair<size_t, size_t>> chunks;
+//// Add this enhanced vicinity extraction function
+//static string extractAllVicinityText(const string& content, const string& name, int radius = 400) {
+//    if (name.empty() || content.empty()) return content;
+//
+//    string lowerContent = toLowerStr(content);
+//    string lowerName = toLowerStr(name);
+//    vector<size_t> namePositions;
+//
+//    // Find all occurrences of the name
 //    size_t pos = 0;
-//    while (true) {
-//        pos = lowHtml.find(lowName, pos);
-//        if (pos == string::npos) break;
-//
-//        size_t s = (pos < radius) ? 0 : pos - radius;
-//        size_t e = min(pos + lowName.size() + radius, html.size());
-//        chunks.emplace_back(s, e);
-//        pos += lowName.size();
-//    }
-//    if (chunks.empty()) return string();
-//
-//    // merge overlaps
-//    sort(chunks.begin(), chunks.end());
-//    vector<pair<size_t, size_t>> merged{ chunks[0] };
-//    for (size_t i = 1; i < chunks.size(); ++i) {
-//        auto& last = merged.back();
-//        if (chunks[i].first <= last.second + 1)
-//            last.second = max(last.second, chunks[i].second);
-//        else
-//            merged.push_back(chunks[i]);
+//    while ((pos = lowerContent.find(lowerName, pos)) != string::npos) {
+//        namePositions.push_back(pos);
+//        pos += lowerName.size();
 //    }
 //
-//    string out;
-//    out.reserve(html.size() / 4);
-//    for (const auto& se : merged) {
-//        size_t s = se.first;
-//        size_t e = se.second;
-//        out.append(html, s, e - s);
+//    if (namePositions.empty()) {
+//        return content.substr(0, min<size_t>(content.size(), MAX_CONTENT_CHARS));
 //    }
-//    return out;
+//
+//    // Merge overlapping vicinity regions
+//    vector<pair<size_t, size_t>> regions;
+//    for (size_t namePos : namePositions) {
+//        size_t start = (namePos > radius) ? namePos - radius : 0;
+//        size_t end = min(content.size(), namePos + lowerName.size() + radius);
+//
+//        // Merge with previous region if overlapping
+//        if (!regions.empty() && start <= regions.back().second) {
+//            regions.back().second = end;
+//        }
+//        else {
+//            regions.push_back({ start, end });
+//        }
+//    }
+//
+//    // Extract all relevant regions
+//    string vicinityText;
+//    for (const auto& region : regions) {
+//        vicinityText += content.substr(region.first, region.second - region.first) + " ... ";
+//        if (vicinityText.size() > MAX_CONTENT_CHARS) break;
+//    }
+//
+//    return vicinityText.substr(0, min(vicinityText.size(), MAX_CONTENT_CHARS));
+//}
+//
+//// Modify the main processing loop (replace the current content extraction section):
+//static void processWebpageContent(const string& pageHtml, const string& link,
+//    const string& name, vector<ExtractedFact>& knowledgeBase) {
+//
+//    // Extract only content near the name from raw HTML first
+//    string vicinityHtml = extractAllVicinityText(pageHtml, name, 500);
+//
+//    if (vicinityHtml.empty()) {
+//        cout << "  [INFO] No content found near name '" << name << "'. Skipping page.\n";
+//        return;
+//    }
+//
+//    cout << "  [INFO] Extracted " << vicinityHtml.size() << " chars near name\n";
+//
+//    // Raw attribute extraction (mailto/tel) - only in vicinity
+//    auto rawFound = scanHTMLForMailtoTel(vicinityHtml, name);
+//    if (!rawFound.empty()) {
+//        cout << "  [RAWSCAN] Found contacts in HTML attributes near name:\n";
+//        for (auto& s : rawFound) {
+//            cout << "     " << s << " [VICINITY]\n";
+//            ExtractedFact f;
+//            if (s.rfind("Email:", 0) == 0) { f.category = "Contact/Email"; f.value = s.substr(7); }
+//            else if (s.rfind("Phone:", 0) == 0) { f.category = "Contact/Phone"; f.value = s.substr(7); }
+//            else { f.category = "Contact"; f.value = s; }
+//            f.sourceURL = link;
+//            knowledgeBase.push_back(f);
+//        }
+//    }
+//
+//    // Parse only the vicinity content with Lexbor
+//    string content;
+//    if (!vicinityHtml.empty()) {
+//        content = extractTextFromHTML_withTimeout(vicinityHtml, LEXBOR_TIMEOUT);
+//        if (content.empty()) {
+//            cout << "  [WARN] Lexbor parse failed on vicinity. Using fallback.\n";
+//            content = stripTags(vicinityHtml);
+//        }
+//    }
+//
+//    if (content.empty()) {
+//        cout << "  [WARN] No extractable content near name. Skipping fact extraction.\n";
+//        return;
+//    }
+//
+//    cout << "  [OK] Parsed " << content.size() << " chars from vicinity\n";
+//
+//    // Scan for facts in the vicinity content only
+//    scanForFacts(content, link, knowledgeBase, name);
+//
+//    // Token-based contact detection in vicinity only
+//    auto contacts = extractContactsTokenBased(content, name);
+//    for (auto& s : contacts) {
+//        ExtractedFact f;
+//        if (s.rfind("Email:", 0) == 0) { f.category = "Contact/Email"; f.value = s.substr(7); }
+//        else if (s.rfind("Phone:", 0) == 0) { f.category = "Contact/Phone"; f.value = s.substr(7); }
+//        else { f.category = "Contact"; f.value = s; }
+//        f.sourceURL = link;
+//        knowledgeBase.push_back(f);
+//    }
 //}
 //
 //// ------------------ MAIN ------------------
@@ -886,75 +971,71 @@
 //            ++processed;
 //            continue;
 //        }
-//        /*  >>>  NEW:  only keep neighbourhoods that mention the person  <<<  */
-//        pageHtml = extractVicinityAroundName(pageHtml, name);
-//        if (pageHtml.empty()) {
-//            cout << "  [SKIP] name ‘" << name
-//                << "’ never appears in page body – treating as irrelevant.\n";
-//            ++processed;
-//            continue;
-//        }
 //
-//        // Raw attribute extraction (mailto / tel)
-//        auto rawFound = scanHTMLForMailtoTel(pageHtml);
-//        if (!rawFound.empty()) {
-//            bool nameFoundRaw = false;
-//            if (!name.empty()) nameFoundRaw = toLowerStr(pageHtml).find(toLowerStr(name)) != string::npos;
-//            string conf = nameFoundRaw ? "[HIGH CONFIDENCE]" : "[LOW CONFIDENCE]";
-//            cout << "  [RAWSCAN] Found contacts in HTML attributes:\n";
-//            for (auto& s : rawFound) {
-//                cout << "     " << s << " " << conf << "\n";
-//                ExtractedFact f;
-//                if (s.rfind("Email:", 0) == 0) { f.category = "Contact/Email"; f.value = s.substr(7); }
-//                else if (s.rfind("Phone:", 0) == 0) { f.category = "Contact/Phone"; f.value = s.substr(7); }
-//                else { f.category = "Contact"; f.value = s; }
-//                f.sourceURL = link;
-//                knowledgeBase.push_back(f);
-//            }
-//        }
+//        //// Raw attribute extraction (mailto / tel)
+//        //auto rawFound = scanHTMLForMailtoTel(pageHtml, name);
+//        //if (!rawFound.empty()) {
+//        //    bool nameFoundRaw = false;
+//        //    if (!name.empty()) nameFoundRaw = toLowerStr(pageHtml).find(toLowerStr(name)) != string::npos;
+//        //    string conf = nameFoundRaw ? "[HIGH CONFIDENCE]" : "[LOW CONFIDENCE]";
+//        //    cout << "  [RAWSCAN] Found contacts in HTML attributes:\n";
+//        //    for (auto& s : rawFound) {
+//        //        cout << "     " << s << " " << conf << "\n";
+//        //        ExtractedFact f;
+//        //        if (s.rfind("Email:", 0) == 0) { f.category = "Contact/Email"; f.value = s.substr(7); }
+//        //        else if (s.rfind("Phone:", 0) == 0) { f.category = "Contact/Phone"; f.value = s.substr(7); }
+//        //        else { f.category = "Contact"; f.value = s; }
+//        //        f.sourceURL = link;
+//        //        knowledgeBase.push_back(f);
+//        //    }
+//        //}
 //
-//        // Keyword prefilter to avoid heavy parsing if page is irrelevant
-//        if (!containsAnyKeywordCaseInsensitive(pageHtml, keywordFilters)) {
-//            cout << "  [SKIP] No contact-related keywords found (email/contact/phone/@). Running lighter extraction.\n";
-//            // still run light extraction via stripTags and scanForFacts fallback
-//            string contentFallback = stripTags(pageHtml);
-//            if (contentFallback.size() > MAX_CONTENT_CHARS) contentFallback = contentFallback.substr(0, MAX_CONTENT_CHARS);
-//            scanForFacts(contentFallback, link, knowledgeBase, name + " " + university + " " + department);
-//            ++processed;
-//            continue;
-//        }
-//        else {
-//            cout << "  [INFO] Contact-related keywords found — running Lexbor parsing...\n";
-//        }
+//        //// Keyword prefilter to avoid heavy parsing if page is irrelevant
+//        //if (!containsAnyKeywordCaseInsensitive(pageHtml, keywordFilters)) {
+//        //    cout << "  [SKIP] No contact-related keywords found (email/contact/phone/@). Running lighter extraction.\n";
+//        //    // still run light extraction via stripTags and scanForFacts fallback
+//        //    string contentFallback = stripTags(pageHtml);
+//        //    if (contentFallback.size() > MAX_CONTENT_CHARS) contentFallback = contentFallback.substr(0, MAX_CONTENT_CHARS);
+//        //    scanForFacts(contentFallback, link, knowledgeBase, name + " " + university + " " + department);
+//        //    ++processed;
+//        //    continue;
+//        //}
+//        //else {
+//        //    cout << "  [INFO] Contact-related keywords found — running Lexbor parsing...\n";
+//        //}
 //
-//        // Lexbor parsing (with timeout)
-//        string content = extractTextFromHTML_withTimeout(pageHtml, LEXBOR_TIMEOUT);
-//        if (content.empty()) {
-//            cout << "  [WARN] Lexbor parse timed out/failed. Using fallback stripper.\n";
-//            content = stripTags(pageHtml);
-//        }
-//        else {
-//            cout << "  [OK] Lexbor returned content (" << content.size() << " chars)\n";
-//        }
+//        //// Lexbor parsing (with timeout)
+//        //string content = extractTextFromHTML_withTimeout(pageHtml, LEXBOR_TIMEOUT);
+//        //if (content.empty()) {
+//        //    cout << "  [WARN] Lexbor parse timed out/failed. Using fallback stripper.\n";
+//        //    content = stripTags(pageHtml);
+//        //}
+//        //else {
+//        //    cout << "  [OK] Lexbor returned content (" << content.size() << " chars)\n";
+//        //}
 //
-//        if (content.size() > MAX_CONTENT_CHARS) {
-//            cout << "  [INFO] Truncating extracted content to " << MAX_CONTENT_CHARS << " characters for safe scanning.\n";
-//            content = content.substr(0, MAX_CONTENT_CHARS);
-//        }
+//        //if (content.size() > MAX_CONTENT_CHARS) {
+//        //    cout << "  [INFO] Truncating extracted content to " << MAX_CONTENT_CHARS << " characters for safe scanning.\n";
+//        //    content = content.substr(0, MAX_CONTENT_CHARS);
+//        //}
 //
-//        // Scan for facts (semantic)
-//        scanForFacts(content, link, knowledgeBase, name + " " + university + " " + department);
+//        //// Scan for facts (semantic)
+//        //string focusedContent = extractVicinityText(content, name);
+//        //scanForFacts(focusedContent, link, knowledgeBase, name + " " + university + " " + department);
 //
-//        // Token-based contact detection
-//        auto contacts = extractContactsTokenBased(content, name + " " + university + " " + department);
-//        for (auto& s : contacts) {
-//            ExtractedFact f;
-//            if (s.rfind("Email:", 0) == 0) { f.category = "Contact/Email"; f.value = s.substr(7); }
-//            else if (s.rfind("Phone:", 0) == 0) { f.category = "Contact/Phone"; f.value = s.substr(7); }
-//            else { f.category = "Contact"; f.value = s; }
-//            f.sourceURL = link;
-//            knowledgeBase.push_back(f);
-//        }
+//        //// Token-based contact detection
+//        //auto contacts = extractContactsTokenBased(content, name + " " + university + " " + department);
+//        //for (auto& s : contacts) {
+//        //    ExtractedFact f;
+//        //    if (s.rfind("Email:", 0) == 0) { f.category = "Contact/Email"; f.value = s.substr(7); }
+//        //    else if (s.rfind("Phone:", 0) == 0) { f.category = "Contact/Phone"; f.value = s.substr(7); }
+//        //    else { f.category = "Contact"; f.value = s; }
+//        //    f.sourceURL = link;
+//        //    knowledgeBase.push_back(f);
+//        //}
+//
+//        // Replace the current content processing in the main loop with:
+//        processWebpageContent(pageHtml, link, name, knowledgeBase);
 //
 //        cout << "  [INFO] Extraction finished for this URL. Results added to knowledge base.\n";
 //        ++processed;
