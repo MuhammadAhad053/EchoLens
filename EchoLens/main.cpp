@@ -878,13 +878,37 @@ static json refineAndValidateWithGemini(const vector<ExtractedFact>& kb) {
     ss << "Below is a list of extracted facts about a person from various web sources.\n";
     ss << "Each fact has a category, raw value, and source.\n";
     ss << "Your task: clean, deduplicate, validate, and merge them into a single structured JSON.\n";
-    ss << "If facts are incomplete or redundant, fix them. If something important seems missing, infer it logically.\n";
+    ss << "If facts are incomplete or redundant, fix them(you can add facts aswell). If something important seems missing, add a fact for it through your own knowledge.\n";
     ss << "Return JSON only, with keys: name, department, university, designation, contact_emails, contact_phones, research_interests, education, awards, location, and others.\n";
+    ss << "Respond with ONE and ONLY ONE valid JSON object.";
+    ss << "Do not include explanations, comments, text, or code fences.";
+    ss << "Do not wrap the JSON in ```json or any other formatting.";
+    ss << "Output MUST start with '{' and end with '}'.";
+    ss << "If you need to add facts, insert them directly into the JSON.";
+    ss << "Never output multiple JSON objects or trailing text.";
+    ss << "Follow this JSON schema exactly:\n";
+    ss << "{\n"
+        << "  \"name\": string,\n"
+        << "  \"department\": string,\n"
+        << "  \"university\": string,\n"
+        << "  \"designation\": string,\n"
+        << "  \"contact_emails\": [string],\n"
+        << "  \"contact_phones\": [string],\n"
+        << "  \"research_interests\": [string],\n"
+        << "  \"education\": [string],\n"
+        << "  \"awards\": [string],\n"
+        << "  \"location\": string,\n"
+        << "  \"others\": [string]\n"
+        << "}";
+
     ss << "Facts:\n";
     for (const auto& f : kb)
         ss << "- [" << f.category << "] " << f.value << " (source: " << f.sourceURL << ")\n";
 
     string resp = askGeminiForEntities(ss.str());
+
+    std::cout << "=== RAW GEMINI OUTPUT ===\n" << resp << "\n=========================\n";
+
     if (resp.empty()) {
         cerr << "[Refinement] Gemini returned empty response.\n";
         return json();
@@ -910,6 +934,45 @@ static json refineAndValidateWithGemini(const vector<ExtractedFact>& kb) {
         return fallback;
     }
 }
+
+static void printRefinedJSON(const json& j) {
+
+    auto printBlock = [&](const string& title, const json& val) {
+        // skip empties
+        if (val.is_null()) return;
+        if (val.is_string() && val.get<string>().empty()) return;
+        if (val.is_array() && val.empty()) return;
+        if (val.is_object() && val.empty()) return;
+
+        cout << "-> " << title << ":\n";
+
+        if (val.is_array()) {
+            for (const auto& v : val) {
+                cout << "   - " << v.get<string>() << "\n";
+            }
+        }
+        else if (val.is_string()) {
+            cout << "   - " << val.get<string>() << "\n";
+        }
+
+        cout << "\n";
+        };
+
+    printBlock("name", j.value("name", ""));
+    printBlock("department", j.value("department", ""));
+    printBlock("university", j.value("university", ""));
+    printBlock("designation", j.value("designation", ""));
+    printBlock("contact_emails", j.value("contact_emails", json::array()));
+    printBlock("contact_phones", j.value("contact_phones", json::array()));
+    printBlock("research_interests", j.value("research_interests", json::array()));
+    printBlock("education", j.value("education", json::array()));
+    printBlock("awards", j.value("awards", json::array()));
+    printBlock("location", j.value("location", ""));
+    printBlock("others", j.value("others", json::array()));
+
+}
+
+
 
 // ------------------ MAIN ------------------
 int main() {
@@ -1092,13 +1155,14 @@ int main() {
     cout << "\n[5/5] Refining extracted data with Gemini...\n";
     json refined = refineAndValidateWithGemini(knowledgeBase);
 
+
     cout << "\n===== Refined Structured Output =====\n";
     if (refined.contains("raw_response"))
         // print raw Gemini text if JSON parsing failed
         cout << refined["raw_response"].get<string>() << "\n";
     else
         // print parsed JSON nicely
-        cout << refined.dump(4) << "\n";
+        printRefinedJSON(refined);
     cout << "=====================================\n";
 
 
