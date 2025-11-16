@@ -126,15 +126,15 @@ Normaliz.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="attempt.cpp" />
-    <ClCompile Include="categorized.cpp" />
-    <ClCompile Include="hitormiss.cpp" />
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="new.cpp" />
-    <ClCompile Include="nlp.cpp" />
-    <ClCompile Include="patched.cpp" />
-    <ClCompile Include="summary.cpp" />
-    <ClCompile Include="trial.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="fact_extractor.h" />
+    <ClInclude Include="gemini_utils.h" />
+    <ClInclude Include="html_parser.h" />
+    <ClInclude Include="http_utils.h" />
+    <ClInclude Include="string_utils.h" />
+    <ClInclude Include="summary_utils.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
