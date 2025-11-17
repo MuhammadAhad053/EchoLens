@@ -85,10 +85,11 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>D:\One Piece\Songs\zlib-1.2.3-lib (1)\include;D:\One Piece\Songs\libharu-2.4.5\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>libcurl.lib;ws2_32.lib;wldap32.lib;Crypt32.lib;lexbor.lib;Normaliz.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>C:\vcpkg\installed\x64-windows\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>libcurl.lib;ws2_32.lib;wldap32.lib;Crypt32.lib;zlib.lib;hpdf.lib;lexbor.lib;Normaliz.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>D:\One Piece\Songs\zlib-1.2.3-lib (1)\lib;D:\One Piece\Songs\libharu-2.4.5\build\src\Release;C:\vcpkg\installed\x64-windows\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <SubSystem>Console</SubSystem>
     </Link>
   </ItemDefinitionGroup>
@@ -114,14 +115,12 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>D:\One Piece\Songs\zlib-1.2.3-lib (1)\include;D:\One Piece\Songs\libharu-2.4.5\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>libcurl.lib;
-ws2_32.lib;
-wldap32.lib;
-Crypt32.lib;
+      <AdditionalDependencies>libcurl.lib;ws2_32.lib;wldap32.lib;Crypt32.lib;zlib.lib;hpdf.lib;2.lib;
 Normaliz.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>C:\vcpkg\installed\x64-windows\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>D:\One Piece\Songs\zlib-1.2.3-lib (1)\lib;D:\One Piece\Songs\libharu-2.4.5\build\src\Release;C:\vcpkg\installed\x64-windows\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <SubSystem>Console</SubSystem>
     </Link>
   </ItemDefinitionGroup>
@@ -135,6 +134,13 @@ Normaliz.lib;%(AdditionalDependencies)</AdditionalDependencies>
     <ClCompile Include="patched.cpp" />
     <ClCompile Include="summary.cpp" />
     <ClCompile Include="trial.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Xml" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
