@@ -24,7 +24,6 @@ struct ExtractedFact {
 };
 
 // --- Constants ---
-static const size_t MAX_SCAN_TOKENS = 2000;
 static const map<string, vector<string>> keywordCategoryMap = {
     {"Designation", {"professor", "lecturer", "assistant professor", "associate professor", "assistant", "associate", "hod", "head of", "dean", "chair", "faculty", "postdoc", "researcher", "instructor"}},
     {"Department", {"department", "dept.", "csit", "computer science", "computer & it", "computer science & it", "informatics", "electrical", "mechanical", "mathematics", "physics"}},

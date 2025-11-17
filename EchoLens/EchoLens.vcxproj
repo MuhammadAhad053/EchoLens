@@ -85,10 +85,11 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>D:\One Piece\Songs\zlib-1.2.3-lib (1)\include;D:\One Piece\Songs\libharu-2.4.5\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>libcurl.lib;ws2_32.lib;wldap32.lib;Crypt32.lib;lexbor.lib;Normaliz.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>C:\vcpkg\installed\x64-windows\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>libcurl.lib;ws2_32.lib;wldap32.lib;Crypt32.lib;hpdf.lib;zlib.lib;lexbor.lib;Normaliz.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>D:\One Piece\Songs\zlib-1.2.3-lib (1)\lib;D:\One Piece\Songs\libharu-2.4.5\build\src\Release;C:\vcpkg\installed\x64-windows\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <SubSystem>Console</SubSystem>
     </Link>
   </ItemDefinitionGroup>
@@ -114,14 +115,12 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>D:\One Piece\Songs\zlib-1.2.3-lib (1)\include;D:\One Piece\Songs\libharu-2.4.5\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>libcurl.lib;
-ws2_32.lib;
-wldap32.lib;
-Crypt32.lib;
+      <AdditionalDependencies>libcurl.lib;ws2_32.lib;wldap32.lib;Crypt32.lib;hpdf.lib;zlib.lib;2.lib;
 Normaliz.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>C:\vcpkg\installed\x64-windows\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>D:\One Piece\Songs\zlib-1.2.3-lib (1)\lib;D:\One Piece\Songs\libharu-2.4.5\build\src\Release;C:\vcpkg\installed\x64-windows\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <SubSystem>Console</SubSystem>
     </Link>
   </ItemDefinitionGroup>
@@ -129,10 +128,12 @@ Normaliz.lib;%(AdditionalDependencies)</AdditionalDependencies>
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="config.h" />
     <ClInclude Include="fact_extractor.h" />
     <ClInclude Include="gemini_utils.h" />
     <ClInclude Include="html_parser.h" />
     <ClInclude Include="http_utils.h" />
+    <ClInclude Include="pdf_utils.h" />
     <ClInclude Include="string_utils.h" />
     <ClInclude Include="summary_utils.h" />
   </ItemGroup>

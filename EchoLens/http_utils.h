@@ -18,12 +18,6 @@
 using namespace std;
 using json = nlohmann::json;
 
-// --- Constants ---
-// Use 'static const' to prevent linker errors
-static const long CURL_CONNECT_TIMEOUT = 10L;
-static const long CURL_TOTAL_TIMEOUT = 30L;
-static const size_t MAX_DOWNLOAD_BYTES = 1024 * 1024 * 5;
-
 // --- Structs ---
 struct CurlBuffer {
     std::string data;

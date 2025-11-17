@@ -56,8 +56,16 @@ inline void printRefinedJSON(const json& j) {
         cout << "-> " << title << ":\n";
 
         if (val.is_array()) {
-            for (const auto& v : val) {
-                cout << "   - " << v.get<string>() << "\n";
+            if (title == "contact_emails" || title == "contact_phones") {
+                int lim = min(3, val.size());
+                for (int i = 0; i < lim; i++) {
+                    cout << "   - " << val[i].get<string>() << "\n";
+                }
+            }
+            else {
+                for (const auto& v : val) {
+                    cout << "   - " << v.get<string>() << "\n";
+                }
             }
         }
         else if (val.is_string()) {
@@ -65,7 +73,7 @@ inline void printRefinedJSON(const json& j) {
         }
 
         cout << "\n";
-        };
+    };
 
     printBlock("name", j.value("name", ""));
     printBlock("department", j.value("department", ""));

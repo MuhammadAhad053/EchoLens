@@ -19,9 +19,6 @@
 
 // Use the std namespace as you had in your .cpp
 using namespace std;
-// --- Constant Definitions ---
-static const std::chrono::seconds LEXBOR_TIMEOUT(20);
-static const size_t MAX_CONTENT_CHARS = 20000;
 
 // --- Function Definitions ---
 

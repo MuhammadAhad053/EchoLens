@@ -1,7 +1,5 @@
 #pragma once
 
-// --- Includes ---
-// All headers needed from your .h and .cpp files
 #include <string>
 #include <vector>
 #include <iostream>
@@ -18,8 +16,6 @@
 using namespace std;
 using json = nlohmann::json;
 extern const string GEMINI_URL;
-
-
 
 inline string askGeminiForEntities(const string& prompt) {
     string geminiPrompt;

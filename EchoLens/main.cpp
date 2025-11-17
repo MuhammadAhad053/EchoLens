@@ -1,12 +1,4 @@
-﻿////// Combined: Gemini entity extraction (from trial.cpp) + Lexbor-based fact extraction & classification (from categorized.cpp)
-// Single-file program. Requires:
-//  - libcurl
-//  - lexbor (headers + library)
-//  - nlohmann/json.hpp in include path
-// Build (example):
-// g++ -std=c++17 -O2 -o integrated_search combined.cpp -lcurl -llexbor ...(link lexbor libs as needed)
-//
-#include <iostream>
+﻿#include <iostream>
 #include <string>
 #include <vector>
 #include <map>
@@ -17,35 +9,34 @@
 #include <chrono>
 #include <cctype>
 #include <cstdio>
+#include <windows.h>
+#include <shellapi.h>
+#include <commdlg.h>
+
 #include <curl/curl.h>
 #include "nlohmann/json.hpp"
 
-// Lexbor headers (ensure your include path is set)
+// Lexbor headers
 #include <lexbor/html/parser.h>
 #include <lexbor/dom/interfaces/document.h>
 #include <lexbor/dom/interfaces/element.h>
 #include <lexbor/dom/interfaces/node.h>
 #include <lexbor/dom/interfaces/character_data.h>
 
-//header files 
+#include <hpdf.h>
+
+// Project headers
+#include "config.h"
 #include "http_utils.h"
 #include "string_utils.h"
 #include "gemini_utils.h"
-#include "fact_extractor.h" 
-#include  "html_parser.h"
+#include "fact_extractor.h"
+#include "html_parser.h"
 #include "summary_utils.h"
+#include "pdf_utils.h"
 
 using namespace std;
 using json = nlohmann::json;
-
-// -------------------- CONFIG --------------------
-static const string GEMINI_API_KEY = "AIzaSyDH2iwDhbyDIrj7mIHjSpMbahwO6oxN6AM"; // replace
-static const string GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + GEMINI_API_KEY;
-static const string GOOGLE_CSE_API_KEY = "AIzaSyCLUMLZaNTNeD3N1E2IJ2ODSPuLkdfj0Vo"; // replace
-static const string GOOGLE_CX = "c499c8c7c5dde46d4"; // replace
-
-
-
 
 // ------------------ MAIN ------------------
 int main() {
@@ -63,14 +54,14 @@ int main() {
     curl_global_init(CURL_GLOBAL_DEFAULT);
 
     // 1) Ask Gemini for entities
-    cout << "[1/5] Sending prompt to Gemini for entity extraction...\n";
+    cout << "[1/4] Performing Entity Extraction...\n";
     string geminiResp = askGeminiForEntities(prompt);
     if (geminiResp.empty()) {
-        cerr << "[WARN] Gemini response empty. Continuing with raw prompt as fallback.\n";
+        cerr << "[WARN] Couldn't extract entities from the prompt. Continuing with raw prompt as fallback.\n";
         geminiResp = prompt;
     }
     else {
-        cout << "[OK] Received response from Gemini.\n";
+        cout << "[OK] Entity Extraction Complete\n";
     }
 
     json geminiParsed = parseGeminiJson(geminiResp);
@@ -82,12 +73,12 @@ int main() {
     string others = geminiParsed.value("others", "");
 
     cout << "[Parsed Entities]\n";
-    cout << " name: " << name << "\n";
-    cout << " department: " << department << "\n";
-    cout << " university: " << university << "\n";
-    cout << " affiliation: " << affiliation << "\n";
-    cout << " location: " << location << "\n";
-    cout << " others: " << others << "\n";
+    cout << " Name: " << name << "\n";
+    cout << " Department: " << department << "\n";
+    cout << " University: " << university << "\n";
+    cout << " Affiliation: " << affiliation << "\n";
+    cout << " Location: " << location << "\n";
+    cout << " Others: " << others << "\n";
 
     // 2) Build search query
     string query;
@@ -100,7 +91,7 @@ int main() {
     if (query.empty()) query = prompt;
     while (!query.empty() && isspace((unsigned char)query.back())) query.pop_back();
 
-    cout << "[2/5] Searching the web (Google Custom Search) for: " << query << "\n";
+    cout << "[2/4] Searching the web (Google Custom Search) for: " << query << "\n";
     string enc = urlEncode(query);
     string apiUrl = "https://www.googleapis.com/customsearch/v1?q=" + enc + "&key=" + GOOGLE_CSE_API_KEY + "&cx=" + GOOGLE_CX + "&num=8";
 
@@ -143,13 +134,13 @@ int main() {
         return 0;
     }
 
-    cout << "[3/5] Fetching and extracting facts from top results...\n";
+    cout << "[3/4] Fetching and extracting facts from top 3 results...\n";
     vector<ExtractedFact> knowledgeBase;
     int processed = 0;
     vector<string> keywordFilters = { "email", "contact", "phone", "@" };
 
     for (auto& res : results) {
-        if (processed >= 3) break; // process up to 3 results by default
+        if (processed >= 5) break; // process up to 3 results
         string title = res.first;
         string link = res.second;
         cout << "\nResult " << (processed + 1) << ": " << title << "\n";
@@ -220,26 +211,40 @@ int main() {
         ++processed;
     }
 
-    // 4) Print summary
-    cout << "\n[4/5] Summary:\n";
-    printSummary(knowledgeBase);
-
-    // 5) NEW: Gemini-based refinement
-    cout << "\n[5/5] Refining extracted data with Gemini...\n";
+    // 4) Refinement
+    cout << "\n[4/4] Refining extracted data...\n";
     json refined = refineAndValidateWithGemini(knowledgeBase);
-
 
     cout << "\n===== Refined Structured Output =====\n";
     if (refined.contains("raw_response"))
-        // print raw Gemini text if JSON parsing failed
+        // print raw text if JSON parsing failed
         cout << refined["raw_response"].get<string>() << "\n";
     else
         // print parsed JSON nicely
         printRefinedJSON(refined);
     cout << "=====================================\n";
 
+    string readableText = refinedToReadableText(refined);
+
+    cout << "\nWould you like a PDF of the refined output? (y/n): ";
+    char ans;
+    cin >> ans;
+
+    if (ans == 'y' || ans == 'Y') {
+        string pdfName = makePdfName(refined.value("name", ""));
+        string savePath = askUserForSaveLocation(pdfName);
+
+        if (!savePath.empty()) {
+            createRefinedPDF(savePath, readableText);
+            ShellExecuteA(NULL, "open", savePath.c_str(), NULL, NULL, SW_SHOWNORMAL);
+        }
+        else {
+            cout << "PDF saving canceled.\n";
+        }
+    }
+
+    cout << "[DONE]\n";
 
     curl_global_cleanup();
-    cout << "[DONE]\n";
     return 0;
 }
