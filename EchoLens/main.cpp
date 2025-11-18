@@ -140,7 +140,7 @@ int main() {
     vector<string> keywordFilters = { "email", "contact", "phone", "@" };
 
     for (auto& res : results) {
-        if (processed >= 5) break; // process up to 3 results
+        if (processed >= 3) break; // process up to 3 results
         string title = res.first;
         string link = res.second;
         cout << "\nResult " << (processed + 1) << ": " << title << "\n";
