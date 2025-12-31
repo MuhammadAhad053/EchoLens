@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "952062815742",
+    "project_id": "echolens-a95ae",
+    "storage_bucket": "echolens-a95ae.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:952062815742:android:6782acb1e2d2242a4d64af",
+        "android_client_info": {
+          "package_name": "com.example.currency_converter"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAnnyy_UaxXO0lSOi9jk83fctMybQl2mO4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
